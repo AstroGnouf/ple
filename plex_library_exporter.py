@@ -72,6 +72,7 @@ def connect_to_plex(base_url: str, token: str, port: int = 32400) -> PlexServer:
     *port* is the TCP port number to use for the connection. It defaults to
     32400 (the standard Plex Media Server port).
 
+    Prints detailed debug status messages during the connection process.
     Raises an exception on failure so the caller can handle retries.
     """
     # Ensure the URL has a scheme.
@@ -85,7 +86,46 @@ def connect_to_plex(base_url: str, token: str, port: int = 32400) -> PlexServer:
     scheme = parsed.scheme or "http"
     base_url = f"{scheme}://{host_part}:{port}"
 
-    server = PlexServer(base_url, token)
+    print(f"Attempting to connect to {host_part}:{port}...")
+    print("Testing API token authentication...")
+
+    try:
+        server = PlexServer(base_url, token)
+    except Unauthorized:
+        print("✗ Connection failed!")
+        print("  Error: Unauthorized – the API token was rejected by the server.")
+        print("  Please verify your Plex API token is correct and has not expired.")
+        raise
+    except Exception as exc:
+        print("✗ Connection failed!")
+        # Provide user-friendly messages for common errors.
+        err_msg = str(exc)
+        if "Connection refused" in err_msg:
+            print(f"  Error: Connection refused – no service is listening on {host_part}:{port}.")
+            print("  Check that the Plex Media Server is running and the port is correct.")
+        elif "timed out" in err_msg.lower() or "timeout" in err_msg.lower():
+            print(f"  Error: Connection timeout – could not reach {host_part}:{port}.")
+            print("  Check the hostname/IP and ensure no firewall is blocking the connection.")
+        elif "Name or service not known" in err_msg or "nodename nor servname" in err_msg:
+            print(f"  Error: Server not found – '{host_part}' could not be resolved.")
+            print("  Verify the hostname or IP address is spelled correctly.")
+        elif "SSL" in err_msg or "certificate" in err_msg.lower():
+            print(f"  Error: SSL/TLS error – {err_msg}")
+            print("  Try using http:// instead of https://, or check server certificates.")
+        else:
+            print(f"  Error: {err_msg}")
+        raise
+
+    # Connection succeeded – display server details.
+    print("✓ Connection successful!")
+    print(f"  Server name   : {server.friendlyName}")
+    print(f"  Plex version  : {server.version}")
+    try:
+        lib_count = len(server.library.sections())
+        print(f"  Libraries     : {lib_count} found")
+    except Exception:
+        print("  Libraries     : (unable to enumerate)")
+
     return server
 
 
@@ -134,15 +174,12 @@ def establish_connection(config: dict) -> PlexServer:
 
     # If we already have saved credentials, try them first.
     if host and token:
-        print(f"\nConnecting to saved server ({host}:{port})…")
+        print(f"\nUsing saved credentials for {host}:{port}…")
         try:
             server = connect_to_plex(host, token, port)
-            print(f"✓ Successfully connected to '{server.friendlyName}'.")
             return server
-        except Unauthorized:
-            print("✗ Connection failed: invalid or expired API token.")
-        except Exception as exc:
-            print(f"✗ Connection failed: {exc}")
+        except Exception:
+            pass  # Debug details already printed by connect_to_plex.
         print("Saved credentials did not work. Please re-enter them.\n")
 
     # Interactive prompt loop with retry support.
@@ -151,20 +188,16 @@ def establish_connection(config: dict) -> PlexServer:
         if not host or not token:
             print("Error: Both hostname and token are required.")
             continue
-        print(f"Connecting to {host}:{port}…")
         try:
             server = connect_to_plex(host, token, port)
-            print(f"✓ Successfully connected to '{server.friendlyName}'.")
             # Persist validated credentials.
             config["host"] = host
             config["port"] = port
             config["token"] = token
             save_config(config)
             return server
-        except Unauthorized:
-            print("✗ Connection failed: invalid or expired API token.")
-        except Exception as exc:
-            print(f"✗ Connection failed: {exc}")
+        except Exception:
+            pass  # Debug details already printed by connect_to_plex.
 
         # Offer to retry.
         retry = input("Would you like to try again? (y/n): ").strip().lower()
