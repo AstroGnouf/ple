@@ -18,6 +18,7 @@ import csv
 import json
 import os
 import sys
+import traceback
 
 # ---------------------------------------------------------------------------
 # Dependency check – give a friendly message if PlexAPI is not installed.
@@ -91,10 +92,19 @@ def connect_to_plex(base_url: str, token: str, port: int = 32400) -> PlexServer:
 
     try:
         server = PlexServer(base_url, token)
-    except Unauthorized:
+    except Unauthorized as exc:
         print("✗ Connection failed!")
         print("  Error: Unauthorized – the API token was rejected by the server.")
         print("  Please verify your Plex API token is correct and has not expired.")
+        print()
+        print("  Raw Error Output:")
+        print(f"    Exception Type : {type(exc).__module__}.{type(exc).__qualname__}")
+        print(f"    Exception Msg  : {exc}")
+        tb_str = traceback.format_exc()
+        if tb_str and tb_str.strip() != "NoneType: None":
+            print("    Traceback:")
+            for line in tb_str.strip().splitlines():
+                print(f"      {line}")
         raise
     except Exception as exc:
         print("✗ Connection failed!")
@@ -114,6 +124,15 @@ def connect_to_plex(base_url: str, token: str, port: int = 32400) -> PlexServer:
             print("  Try using http:// instead of https://, or check server certificates.")
         else:
             print(f"  Error: {err_msg}")
+        print()
+        print("  Raw Error Output:")
+        print(f"    Exception Type : {type(exc).__module__}.{type(exc).__qualname__}")
+        print(f"    Exception Msg  : {exc}")
+        tb_str = traceback.format_exc()
+        if tb_str and tb_str.strip() != "NoneType: None":
+            print("    Traceback:")
+            for line in tb_str.strip().splitlines():
+                print(f"      {line}")
         raise
 
     # Connection succeeded – display server details.
