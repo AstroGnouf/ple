@@ -66,31 +66,60 @@ def save_config(config: dict) -> None:
 # Plex connection
 # ---------------------------------------------------------------------------
 
-def connect_to_plex(base_url: str, token: str) -> PlexServer:
+def connect_to_plex(base_url: str, token: str, port: int = 32400) -> PlexServer:
     """Attempt to connect to the Plex server and return a PlexServer instance.
+
+    *port* is the TCP port number to use for the connection. It defaults to
+    32400 (the standard Plex Media Server port).
 
     Raises an exception on failure so the caller can handle retries.
     """
     # Ensure the URL has a scheme.
     if not base_url.startswith(("http://", "https://")):
         base_url = f"http://{base_url}"
-    # Append default Plex port if none was specified.
-    # (Only when there is no port after the host.)
+    # Strip any existing port from the URL and use the explicit port parameter.
     from urllib.parse import urlparse
     parsed = urlparse(base_url)
-    if parsed.port is None:
-        base_url = f"{base_url}:32400"
+    # Rebuild the base URL with the configured port.
+    host_part = parsed.hostname or parsed.netloc
+    scheme = parsed.scheme or "http"
+    base_url = f"{scheme}://{host_part}:{port}"
 
     server = PlexServer(base_url, token)
     return server
 
 
+def validate_port(port_str: str) -> int | None:
+    """Return an integer port if *port_str* represents a valid TCP port
+    (1–65535), otherwise return ``None``."""
+    try:
+        port = int(port_str)
+        if 1 <= port <= 65535:
+            return port
+    except ValueError:
+        pass
+    return None
+
+
 def prompt_for_credentials() -> tuple:
-    """Interactively ask the user for Plex server address and API token."""
+    """Interactively ask the user for Plex server address, TCP port, and API
+    token.  Returns a (host, port, token) tuple."""
     print("\n--- Plex Server Configuration ---")
     host = input("Enter Plex server hostname or IP address (e.g. 192.168.1.100): ").strip()
+
+    # Port prompt – default to the standard Plex port if the user just hits Enter.
+    while True:
+        port_input = input("Enter Plex server TCP port [32400]: ").strip()
+        if port_input == "":
+            port = 32400
+            break
+        port = validate_port(port_input)
+        if port is not None:
+            break
+        print("Invalid port number. Please enter a value between 1 and 65535.")
+
     token = input("Enter your Plex API token: ").strip()
-    return host, token
+    return host, port, token
 
 
 def establish_connection(config: dict) -> PlexServer:
@@ -100,12 +129,14 @@ def establish_connection(config: dict) -> PlexServer:
 
     host = config.get("host", "")
     token = config.get("token", "")
+    # Backward compatibility: default to 32400 if port is missing from config.
+    port = config.get("port", 32400)
 
     # If we already have saved credentials, try them first.
     if host and token:
-        print(f"\nConnecting to saved server ({host})…")
+        print(f"\nConnecting to saved server ({host}:{port})…")
         try:
-            server = connect_to_plex(host, token)
+            server = connect_to_plex(host, token, port)
             print(f"✓ Successfully connected to '{server.friendlyName}'.")
             return server
         except Unauthorized:
@@ -116,16 +147,17 @@ def establish_connection(config: dict) -> PlexServer:
 
     # Interactive prompt loop with retry support.
     while True:
-        host, token = prompt_for_credentials()
+        host, port, token = prompt_for_credentials()
         if not host or not token:
             print("Error: Both hostname and token are required.")
             continue
-        print(f"Connecting to {host}…")
+        print(f"Connecting to {host}:{port}…")
         try:
-            server = connect_to_plex(host, token)
+            server = connect_to_plex(host, token, port)
             print(f"✓ Successfully connected to '{server.friendlyName}'.")
             # Persist validated credentials.
             config["host"] = host
+            config["port"] = port
             config["token"] = token
             save_config(config)
             return server
