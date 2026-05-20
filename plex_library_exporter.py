@@ -360,7 +360,7 @@ def export_titles(section, fmt: str, filename: str) -> None:
     level (artist → album) so that actual book titles are exported instead
     of author names.  A CSV export of an audiobook library includes both
     "Title" and "Author" columns; a text export lists one book title per
-    line with the author in parentheses.
+    line with no author information.
     """
 
     print(f"Fetching items from '{section.title}'…")
@@ -391,13 +391,10 @@ def export_titles(section, fmt: str, filename: str) -> None:
                     for entry in entries:
                         writer.writerow([entry["title"]])
         else:
-            # Plain text – one title per line.
+            # Plain text – one title per line, no author info.
             with open(filename, "w", encoding="utf-8") as fh:
                 for entry in entries:
-                    if is_audiobook and entry.get("author"):
-                        fh.write(f"{entry['title']} ({entry['author']})\n")
-                    else:
-                        fh.write(entry["title"] + "\n")
+                    fh.write(entry["title"] + "\n")
     except OSError as exc:
         print(f"Error writing file: {exc}")
         sys.exit(1)
