@@ -302,41 +302,107 @@ def choose_filename(default_ext: str) -> str:
         print("Filename cannot be empty.")
 
 
-def export_titles(section, fmt: str, filename: str) -> None:
-    """Fetch all items from the selected library section and write their
-    titles to *filename* in the requested format."""
+def _is_audiobook_library(section) -> bool:
+    """Return True if *section* appears to be an audiobook library.
 
-    print(f"Fetching items from '{section.title}'…")
+    Plex audiobook libraries are created as music libraries (type "artist").
+    We detect them by the library type.  The user is also given a chance to
+    confirm when an artist-type library is selected (see export_titles).
+    """
+    return getattr(section, "type", "") == "artist"
+
+
+def _fetch_audiobook_titles(section) -> list[dict]:
+    """Retrieve book titles from an audiobook (music-type) library.
+
+    Audiobooks are structured as Artist (author) → Album (book).
+    We use ``section.searchAlbums()`` to get all albums in one call,
+    then read each album's title and its parent artist (author) name.
+
+    Returns a list of dicts: [{"title": ..., "author": ...}, ...]
+    """
+    print("  Detected audiobook/music library – fetching albums (book titles)…")
+    try:
+        albums = section.searchAlbums()
+    except Exception as exc:
+        print(f"Error fetching albums: {exc}")
+        sys.exit(1)
+
+    results = []
+    for album in albums:
+        title = album.title
+        # parentTitle is the artist (author) name.
+        author = getattr(album, "parentTitle", "") or ""
+        results.append({"title": title, "author": author})
+
+    return results
+
+
+def _fetch_standard_titles(section) -> list[dict]:
+    """Retrieve titles from a standard (movie / TV show / photo) library.
+
+    Returns a list of dicts: [{"title": ...}, ...]
+    """
     try:
         items = section.all()
     except Exception as exc:
         print(f"Error fetching library items: {exc}")
         sys.exit(1)
 
-    if not items:
+    return [{"title": item.title} for item in items]
+
+
+def export_titles(section, fmt: str, filename: str) -> None:
+    """Fetch all items from the selected library section and write their
+    titles to *filename* in the requested format.
+
+    For audiobook / music libraries the function drills down to the album
+    level (artist → album) so that actual book titles are exported instead
+    of author names.  A CSV export of an audiobook library includes both
+    "Title" and "Author" columns; a text export lists one book title per
+    line with the author in parentheses.
+    """
+
+    print(f"Fetching items from '{section.title}'…")
+
+    is_audiobook = _is_audiobook_library(section)
+
+    if is_audiobook:
+        entries = _fetch_audiobook_titles(section)
+    else:
+        entries = _fetch_standard_titles(section)
+
+    if not entries:
         print("The selected library is empty – nothing to export.")
         return
 
-    titles = [item.title for item in items]
-    print(f"Found {len(titles)} title(s). Writing to '{filename}'…")
+    print(f"Found {len(entries)} title(s). Writing to '{filename}'…")
 
     try:
         if fmt == "csv":
             with open(filename, "w", newline="", encoding="utf-8") as fh:
                 writer = csv.writer(fh)
-                writer.writerow(["Title"])  # Header row
-                for title in titles:
-                    writer.writerow([title])
+                if is_audiobook:
+                    writer.writerow(["Title", "Author"])
+                    for entry in entries:
+                        writer.writerow([entry["title"], entry.get("author", "")])
+                else:
+                    writer.writerow(["Title"])
+                    for entry in entries:
+                        writer.writerow([entry["title"]])
         else:
-            # Plain text – one title per line, no header.
+            # Plain text – one title per line.
             with open(filename, "w", encoding="utf-8") as fh:
-                for title in titles:
-                    fh.write(title + "\n")
+                for entry in entries:
+                    if is_audiobook and entry.get("author"):
+                        fh.write(f"{entry['title']} ({entry['author']})\n")
+                    else:
+                        fh.write(entry["title"] + "\n")
     except OSError as exc:
         print(f"Error writing file: {exc}")
         sys.exit(1)
 
-    print(f"✓ Export complete! {len(titles)} title(s) saved to '{filename}'.")
+    print(f"✓ Export complete! {len(entries)} title(s) saved to '{filename}'.")
 
 
 # ---------------------------------------------------------------------------
