@@ -612,10 +612,10 @@ def _export_html(entries: list[dict], is_audiobook: bool, library_name: str, fil
                 }});
             }});
             
-            function sortTable(columnIndex, header) {{
+            function sortTable(columnIndex, header, forceDescending = false) {{
                 const tbody = table.querySelector('tbody');
                 const rows = Array.from(tbody.querySelectorAll('tr'));
-                const isAscending = !header.classList.contains('sorted-asc');
+                const isAscending = forceDescending ? false : !header.classList.contains('sorted-asc');
                 
                 // Remove sorting classes from all headers
                 headers.forEach(h => {{
@@ -647,6 +647,10 @@ def _export_html(entries: list[dict], is_audiobook: bool, library_name: str, fil
                 // Reorder rows in the table
                 rows.forEach(row => tbody.appendChild(row));
             }}
+            
+            // Default sort: Date Added column, newest first (descending)
+            const dateColumnIndex = headers.length - 1; // Date Added is always the last column
+            sortTable(dateColumnIndex, headers[dateColumnIndex], true);
         }});
     </script>
 </body>
