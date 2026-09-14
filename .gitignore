@@ -1,0 +1,30 @@
+# Plex Library Exporter - ignored files
+
+# User configuration (contains server host, port, and API token)
+config.json
+
+# Exported library files
+*.csv
+*.txt
+!requirements.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+venv/
+.venv/
+env/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Internal
+.abacus.donotdelete
