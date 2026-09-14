@@ -388,8 +388,9 @@ def _export_html(entries: list[dict], is_audiobook: bool, library_name: str, fil
         }}
         
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            font-family: 'Courier New', 'Monaco', 'Consolas', monospace;
+            background: #000000;
+            color: #00ff00;
             padding: 20px;
             min-height: 100vh;
         }}
@@ -397,27 +398,31 @@ def _export_html(entries: list[dict], is_audiobook: bool, library_name: str, fil
         .container {{
             max-width: 1200px;
             margin: 0 auto;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            background: #000000;
+            border: 2px solid #00ff00;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
             overflow: hidden;
         }}
         
         header {{
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-            color: white;
+            background: #000000;
+            color: #00ff00;
             padding: 30px;
             text-align: center;
+            border-bottom: 2px solid #00ff00;
         }}
         
         header h1 {{
             font-size: 2em;
             margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            text-shadow: 0 0 10px #00ff00;
         }}
         
         header p {{
-            opacity: 0.9;
             font-size: 1.1em;
+            opacity: 0.8;
         }}
         
         .stats {{
@@ -426,8 +431,8 @@ def _export_html(entries: list[dict], is_audiobook: bool, library_name: str, fil
             gap: 30px;
             margin-top: 20px;
             padding: 15px;
-            background: rgba(255,255,255,0.1);
-            border-radius: 8px;
+            background: rgba(0, 255, 0, 0.05);
+            border: 1px solid #00ff00;
         }}
         
         .stat {{
@@ -437,11 +442,14 @@ def _export_html(entries: list[dict], is_audiobook: bool, library_name: str, fil
         .stat-value {{
             font-size: 2em;
             font-weight: bold;
+            color: #00ff00;
+            text-shadow: 0 0 10px #00ff00;
         }}
         
         .stat-label {{
             font-size: 0.9em;
-            opacity: 0.9;
+            opacity: 0.7;
+            text-transform: uppercase;
         }}
         
         .table-container {{
@@ -456,7 +464,7 @@ def _export_html(entries: list[dict], is_audiobook: bool, library_name: str, fil
         }}
         
         thead {{
-            background: #f8f9fa;
+            background: rgba(0, 255, 0, 0.1);
             position: sticky;
             top: 0;
         }}
@@ -465,47 +473,54 @@ def _export_html(entries: list[dict], is_audiobook: bool, library_name: str, fil
             padding: 15px;
             text-align: left;
             font-weight: 600;
-            color: #495057;
+            color: #00ff00;
             cursor: pointer;
             user-select: none;
             transition: background 0.2s;
             position: relative;
+            border: 1px solid #00ff00;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }}
         
         th:hover {{
-            background: #e9ecef;
+            background: rgba(0, 255, 0, 0.2);
+            text-shadow: 0 0 10px #00ff00;
         }}
         
         th.sortable::after {{
             content: ' ⇅';
-            opacity: 0.3;
+            opacity: 0.5;
             font-size: 0.8em;
         }}
         
         th.sorted-asc::after {{
             content: ' ↑';
             opacity: 1;
-            color: #11998e;
+            color: #00ff00;
+            text-shadow: 0 0 10px #00ff00;
         }}
         
         th.sorted-desc::after {{
             content: ' ↓';
             opacity: 1;
-            color: #11998e;
+            color: #00ff00;
+            text-shadow: 0 0 10px #00ff00;
         }}
         
         tbody tr {{
-            border-bottom: 1px solid #e9ecef;
+            border-bottom: 1px solid #00ff00;
             transition: background 0.2s;
         }}
         
         tbody tr:hover {{
-            background: #f8f9fa;
+            background: rgba(0, 255, 0, 0.1);
         }}
         
         td {{
             padding: 15px;
-            color: #212529;
+            color: #00ff00;
+            border: 1px solid rgba(0, 255, 0, 0.3);
         }}
         
         .title-cell {{
@@ -513,29 +528,26 @@ def _export_html(entries: list[dict], is_audiobook: bool, library_name: str, fil
         }}
         
         .date-cell {{
-            color: #6c757d;
+            color: #00cc00;
             white-space: nowrap;
         }}
         
         .author-cell {{
-            color: #495057;
+            color: #00dd00;
         }}
         
         footer {{
             text-align: center;
             padding: 20px;
-            color: #6c757d;
+            color: #00ff00;
             font-size: 0.9em;
-            border-top: 1px solid #e9ecef;
+            border-top: 2px solid #00ff00;
+            opacity: 0.7;
         }}
         
         @media (max-width: 768px) {{
             body {{
                 padding: 10px;
-            }}
-            
-            .container {{
-                border-radius: 8px;
             }}
             
             header {{
