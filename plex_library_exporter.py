@@ -389,7 +389,7 @@ def _export_html(entries: list[dict], is_audiobook: bool, library_name: str, fil
         
         body {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
             padding: 20px;
             min-height: 100vh;
         }}
@@ -404,7 +404,7 @@ def _export_html(entries: list[dict], is_audiobook: bool, library_name: str, fil
         }}
         
         header {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
             color: white;
             padding: 30px;
             text-align: center;
@@ -485,13 +485,13 @@ def _export_html(entries: list[dict], is_audiobook: bool, library_name: str, fil
         th.sorted-asc::after {{
             content: ' ↑';
             opacity: 1;
-            color: #667eea;
+            color: #11998e;
         }}
         
         th.sorted-desc::after {{
             content: ' ↓';
             opacity: 1;
-            color: #667eea;
+            color: #11998e;
         }}
         
         tbody tr {{
