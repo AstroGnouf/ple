@@ -285,12 +285,12 @@ def select_library(sections: list, config: dict) -> object:
 # ---------------------------------------------------------------------------
 
 def choose_export_format() -> str:
-    """Ask the user whether to export as CSV or plain text."""
+    """Ask the user whether to export as CSV, plain text, or HTML."""
     while True:
-        fmt = input("\nExport format – enter 'csv' or 'text': ").strip().lower()
-        if fmt in ("csv", "text"):
+        fmt = input("\nExport format – enter 'csv', 'text', or 'html': ").strip().lower()
+        if fmt in ("csv", "text", "html"):
             return fmt
-        print("Invalid choice. Please enter 'csv' or 'text'.")
+        print("Invalid choice. Please enter 'csv', 'text', or 'html'.")
 
 
 def choose_filename(default_ext: str) -> str:
@@ -319,7 +319,7 @@ def _fetch_audiobook_titles(section) -> list[dict]:
     We use ``section.searchAlbums()`` to get all albums in one call,
     then read each album's title and its parent artist (author) name.
 
-    Returns a list of dicts: [{"title": ..., "author": ...}, ...]
+    Returns a list of dicts: [{"title": ..., "author": ..., "added_at": ...}, ...]
     """
     print("  Detected audiobook/music library – fetching albums (book titles)…")
     try:
@@ -333,7 +333,9 @@ def _fetch_audiobook_titles(section) -> list[dict]:
         title = album.title
         # parentTitle is the artist (author) name.
         author = getattr(album, "parentTitle", "") or ""
-        results.append({"title": title, "author": author})
+        # addedAt is a datetime object or None.
+        added_at = getattr(album, "addedAt", None)
+        results.append({"title": title, "author": author, "added_at": added_at})
 
     return results
 
@@ -341,7 +343,7 @@ def _fetch_audiobook_titles(section) -> list[dict]:
 def _fetch_standard_titles(section) -> list[dict]:
     """Retrieve titles from a standard (movie / TV show / photo) library.
 
-    Returns a list of dicts: [{"title": ...}, ...]
+    Returns a list of dicts: [{"title": ..., "added_at": ...}, ...]
     """
     try:
         items = section.all()
@@ -349,7 +351,345 @@ def _fetch_standard_titles(section) -> list[dict]:
         print(f"Error fetching library items: {exc}")
         sys.exit(1)
 
-    return [{"title": item.title} for item in items]
+    results = []
+    for item in items:
+        title = item.title
+        added_at = getattr(item, "addedAt", None)
+        results.append({"title": title, "added_at": added_at})
+    
+    return results
+
+
+def _format_date(dt) -> str:
+    """Format a datetime object as YYYY-MM-DD or return empty string if None."""
+    if dt is None:
+        return ""
+    try:
+        return dt.strftime("%Y-%m-%d")
+    except Exception:
+        return ""
+
+
+def _export_html(entries: list[dict], is_audiobook: bool, library_name: str, filename: str) -> None:
+    """Generate a modern HTML5 page with a sortable table of library entries."""
+    
+    # HTML template with inline CSS and JavaScript for sorting
+    html_template = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{library_name} - Plex Library Export</title>
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }}
+        
+        .container {{
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }}
+        
+        header {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }}
+        
+        header h1 {{
+            font-size: 2em;
+            margin-bottom: 10px;
+        }}
+        
+        header p {{
+            opacity: 0.9;
+            font-size: 1.1em;
+        }}
+        
+        .stats {{
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+        }}
+        
+        .stat {{
+            text-align: center;
+        }}
+        
+        .stat-value {{
+            font-size: 2em;
+            font-weight: bold;
+        }}
+        
+        .stat-label {{
+            font-size: 0.9em;
+            opacity: 0.9;
+        }}
+        
+        .table-container {{
+            padding: 30px;
+            overflow-x: auto;
+        }}
+        
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95em;
+        }}
+        
+        thead {{
+            background: #f8f9fa;
+            position: sticky;
+            top: 0;
+        }}
+        
+        th {{
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            color: #495057;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s;
+            position: relative;
+        }}
+        
+        th:hover {{
+            background: #e9ecef;
+        }}
+        
+        th.sortable::after {{
+            content: ' ⇅';
+            opacity: 0.3;
+            font-size: 0.8em;
+        }}
+        
+        th.sorted-asc::after {{
+            content: ' ↑';
+            opacity: 1;
+            color: #667eea;
+        }}
+        
+        th.sorted-desc::after {{
+            content: ' ↓';
+            opacity: 1;
+            color: #667eea;
+        }}
+        
+        tbody tr {{
+            border-bottom: 1px solid #e9ecef;
+            transition: background 0.2s;
+        }}
+        
+        tbody tr:hover {{
+            background: #f8f9fa;
+        }}
+        
+        td {{
+            padding: 15px;
+            color: #212529;
+        }}
+        
+        .title-cell {{
+            font-weight: 500;
+        }}
+        
+        .date-cell {{
+            color: #6c757d;
+            white-space: nowrap;
+        }}
+        
+        .author-cell {{
+            color: #495057;
+        }}
+        
+        footer {{
+            text-align: center;
+            padding: 20px;
+            color: #6c757d;
+            font-size: 0.9em;
+            border-top: 1px solid #e9ecef;
+        }}
+        
+        @media (max-width: 768px) {{
+            body {{
+                padding: 10px;
+            }}
+            
+            .container {{
+                border-radius: 8px;
+            }}
+            
+            header {{
+                padding: 20px;
+            }}
+            
+            header h1 {{
+                font-size: 1.5em;
+            }}
+            
+            .table-container {{
+                padding: 15px;
+            }}
+            
+            th, td {{
+                padding: 10px;
+                font-size: 0.9em;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>{library_name}</h1>
+            <p>Plex Library Export</p>
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value">{total_count}</div>
+                    <div class="stat-label">Total Items</div>
+                </div>
+            </div>
+        </header>
+        
+        <div class="table-container">
+            <table id="libraryTable">
+                <thead>
+                    <tr>
+{headers}
+                    </tr>
+                </thead>
+                <tbody>
+{rows}
+                </tbody>
+            </table>
+        </div>
+        
+        <footer>
+            <p>Generated by Plex Library Exporter • {timestamp}</p>
+        </footer>
+    </div>
+    
+    <script>
+        // Simple table sorting functionality
+        document.addEventListener('DOMContentLoaded', function() {{
+            const table = document.getElementById('libraryTable');
+            const headers = table.querySelectorAll('th.sortable');
+            
+            headers.forEach((header, index) => {{
+                header.addEventListener('click', () => {{
+                    sortTable(index, header);
+                }});
+            }});
+            
+            function sortTable(columnIndex, header) {{
+                const tbody = table.querySelector('tbody');
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                const isAscending = !header.classList.contains('sorted-asc');
+                
+                // Remove sorting classes from all headers
+                headers.forEach(h => {{
+                    h.classList.remove('sorted-asc', 'sorted-desc');
+                }});
+                
+                // Add appropriate class to current header
+                header.classList.add(isAscending ? 'sorted-asc' : 'sorted-desc');
+                
+                // Sort rows
+                rows.sort((a, b) => {{
+                    const aValue = a.cells[columnIndex].textContent.trim();
+                    const bValue = b.cells[columnIndex].textContent.trim();
+                    
+                    // Try to parse as date first
+                    const aDate = new Date(aValue);
+                    const bDate = new Date(bValue);
+                    
+                    if (!isNaN(aDate) && !isNaN(bDate)) {{
+                        return isAscending ? aDate - bDate : bDate - aDate;
+                    }}
+                    
+                    // Otherwise compare as strings
+                    return isAscending 
+                        ? aValue.localeCompare(bValue)
+                        : bValue.localeCompare(aValue);
+                }});
+                
+                // Reorder rows in the table
+                rows.forEach(row => tbody.appendChild(row));
+            }}
+        }});
+    </script>
+</body>
+</html>"""
+    
+    # Generate table headers
+    if is_audiobook:
+        headers = """                        <th class="sortable">Title</th>
+                        <th class="sortable">Author</th>
+                        <th class="sortable">Date Added</th>"""
+    else:
+        headers = """                        <th class="sortable">Title</th>
+                        <th class="sortable">Date Added</th>"""
+    
+    # Generate table rows
+    rows_html = []
+    for entry in entries:
+        title = entry.get("title", "")
+        # Escape HTML special characters
+        title = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        
+        date_added = _format_date(entry.get("added_at"))
+        
+        if is_audiobook:
+            author = entry.get("author", "")
+            author = author.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            row = f"""                    <tr>
+                        <td class="title-cell">{title}</td>
+                        <td class="author-cell">{author}</td>
+                        <td class="date-cell">{date_added}</td>
+                    </tr>"""
+        else:
+            row = f"""                    <tr>
+                        <td class="title-cell">{title}</td>
+                        <td class="date-cell">{date_added}</td>
+                    </tr>"""
+        
+        rows_html.append(row)
+    
+    # Get current timestamp
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Fill in template
+    html_content = html_template.format(
+        library_name=library_name,
+        total_count=len(entries),
+        headers=headers,
+        rows="\n".join(rows_html),
+        timestamp=timestamp
+    )
+    
+    # Write to file
+    with open(filename, "w", encoding="utf-8") as fh:
+        fh.write(html_content)
 
 
 def export_titles(section, fmt: str, filename: str) -> None:
@@ -360,7 +700,8 @@ def export_titles(section, fmt: str, filename: str) -> None:
     level (artist → album) so that actual book titles are exported instead
     of author names.  A CSV export of an audiobook library includes both
     "Title" and "Author" columns; a text export lists one book per line
-    as "Book Title by Author Name".
+    as "Book Title by Author Name".  An HTML export creates a modern,
+    sortable table with Title, Date Added, and (for audiobooks) Author.
     """
 
     print(f"Fetching items from '{section.title}'…")
@@ -383,13 +724,17 @@ def export_titles(section, fmt: str, filename: str) -> None:
             with open(filename, "w", newline="", encoding="utf-8") as fh:
                 writer = csv.writer(fh)
                 if is_audiobook:
-                    writer.writerow(["Title", "Author"])
+                    writer.writerow(["Title", "Author", "Date Added"])
                     for entry in entries:
-                        writer.writerow([entry["title"], entry.get("author", "")])
+                        added = _format_date(entry.get("added_at"))
+                        writer.writerow([entry["title"], entry.get("author", ""), added])
                 else:
-                    writer.writerow(["Title"])
+                    writer.writerow(["Title", "Date Added"])
                     for entry in entries:
-                        writer.writerow([entry["title"]])
+                        added = _format_date(entry.get("added_at"))
+                        writer.writerow([entry["title"], added])
+        elif fmt == "html":
+            _export_html(entries, is_audiobook, section.title, filename)
         else:
             # Plain text – one title per line.
             # Audiobooks: "Book Title by Author Name"; others: title only.
@@ -429,7 +774,12 @@ def main():
 
     # Step 5 – Choose export format and filename.
     fmt = choose_export_format()
-    default_ext = "csv" if fmt == "csv" else "txt"
+    if fmt == "csv":
+        default_ext = "csv"
+    elif fmt == "html":
+        default_ext = "html"
+    else:
+        default_ext = "txt"
     filename = choose_filename(default_ext)
 
     # Step 6 – Export!

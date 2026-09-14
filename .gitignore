@@ -6,6 +6,7 @@ config.json
 # Exported library files
 *.csv
 *.txt
+*.html
 !requirements.txt
 
 # Python
