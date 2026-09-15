@@ -599,6 +599,50 @@ def choose_filename(
         print("Filename cannot be empty.")
 
 
+def choose_index_location(config: dict, automated: bool = False) -> str:
+    """Return the path for the index.html file.
+
+    Interactive runs prompt (Enter reuses the last location).  Automated runs
+    reuse the last location or default to current directory.
+    """
+    last_location = config.get("index_html_path", "")
+    default_location = last_location or "index.html"
+
+    if automated:
+        return default_location
+
+    abort_if_unattended("Index file location is required.")
+
+    prompt = "Enter location for index.html"
+    if last_location:
+        prompt += f" [last: {last_location}]"
+    else:
+        prompt += " [default: index.html]"
+    prompt += ": "
+
+    while True:
+        location = input(prompt).strip()
+        if location == "":
+            location = default_location
+        
+        # Ensure it ends with .html
+        if not location.lower().endswith(".html"):
+            if location.endswith("/") or location.endswith(os.sep):
+                location = os.path.join(location, "index.html")
+            else:
+                location = f"{location}.html"
+        
+        # Ensure it's named index.html (or in a directory)
+        base_name = os.path.basename(location)
+        if base_name.lower() != "index.html":
+            print("Warning: The index file should be named 'index.html'.")
+            confirm = input(f"Use '{location}' anyway? (y/n): ").strip().lower()
+            if confirm not in ("y", "yes"):
+                continue
+        
+        return location
+
+
 def _is_audiobook_library(section) -> bool:
     """Return True if *section* appears to be an audiobook library.
 
@@ -1106,11 +1150,11 @@ def export_titles(sections: list, fmt: str, filename: str) -> None:
     print(f"✓ Export complete! {len(entries)} title(s) saved to '{filename}'.")
 
 
-def create_index_page(library_files: list[tuple[str, str]], output_dir: str = ".") -> None:
+def create_index_page(library_files: list[tuple[str, str]], index_path: str = "index.html") -> None:
     """Create an index.html page with links to each exported HTML file.
     
     *library_files* is a list of (library_name, filename) tuples.
-    *output_dir* is the directory where the index.html will be written.
+    *index_path* is the full path where the index.html will be written.
     """
     index_template = """<!DOCTYPE html>
 <html lang="en">
@@ -1306,10 +1350,18 @@ def create_index_page(library_files: list[tuple[str, str]], output_dir: str = ".
 
     # Generate library buttons
     button_html = []
+    index_dir = os.path.dirname(os.path.abspath(index_path))
+    
     for library_name, filename in library_files:
-        # Extract just the filename (not full path)
-        base_filename = os.path.basename(filename)
-        button = f'''                <a href="{_esc(base_filename)}" class="library-button">
+        # Make the link relative to the index.html location
+        abs_filename = os.path.abspath(filename)
+        try:
+            rel_path = os.path.relpath(abs_filename, index_dir)
+        except ValueError:
+            # On Windows, relpath fails if paths are on different drives
+            rel_path = abs_filename
+        
+        button = f'''                <a href="{_esc(rel_path)}" class="library-button">
                     <span class="library-name">{_esc(library_name)}</span>
                     <span class="library-arrow">→</span>
                 </a>'''
@@ -1326,9 +1378,13 @@ def create_index_page(library_files: list[tuple[str, str]], output_dir: str = ".
         timestamp=timestamp
     )
     
-    # Write to index.html in the output directory
-    index_path = os.path.join(output_dir, "index.html")
+    # Write to the specified index path
     try:
+        # Create directory if it doesn't exist
+        index_dir = os.path.dirname(index_path)
+        if index_dir and not os.path.exists(index_dir):
+            os.makedirs(index_dir, exist_ok=True)
+        
         with open(index_path, "w", encoding="utf-8") as fh:
             fh.write(html_content)
         print(f"✓ Index page created: {index_path}")
@@ -1385,6 +1441,14 @@ def main(argv: list[str] | None = None) -> None:
     fmt = choose_export_format(config, automated=automated)
     default_ext = extension_for_format(fmt)
 
+    # Step 5b – If HTML format, choose index location before library exports
+    index_path = None
+    if fmt == "html":
+        index_path = choose_index_location(config, automated=automated)
+        config["index_html_path"] = index_path
+        save_config(config)
+        print(f"Index page will be created at: {index_path}")
+
     # Step 6 – For each library, resolve filename and export.
     library_filenames = config.get("library_filenames") or {}
 
@@ -1417,10 +1481,10 @@ def main(argv: list[str] | None = None) -> None:
         
         print()
 
-    # Step 7 – Create index.html if multiple libraries were exported as HTML
-    if fmt == "html" and len(exported_html_files) > 1:
+    # Step 7 – Create index.html if HTML format was used
+    if fmt == "html" and exported_html_files:
         print("--- Creating Index Page ---")
-        create_index_page(exported_html_files)
+        create_index_page(exported_html_files, index_path)
 
 
 if __name__ == "__main__":

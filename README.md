@@ -78,14 +78,20 @@ When exporting multiple libraries, you'll be prompted for a **separate filename 
 
 ### HTML Index Page
 
-When exporting **multiple libraries in HTML format**, the exporter automatically creates an `index.html` page with button-style links to each library's HTML file. The index page uses the same green-on-black terminal aesthetic as the individual library pages.
+When exporting in **HTML format**, the exporter automatically creates an `index.html` page with button-style links to each library's HTML file. The index page uses the same green-on-black terminal aesthetic as the individual library pages.
+
+**On first HTML export**, you'll be prompted to specify the location for `index.html`. This location is saved to your configuration and reused on future runs. You can:
+- Use the default `index.html` (in the current directory)
+- Specify a subdirectory like `exports/index.html`
+- Use an absolute path like `/var/www/html/index.html`
 
 This makes it easy to:
 - Navigate between multiple library exports
 - Create a central hub for all your exported libraries
 - Share a single entry point to all your library data
+- Place the index in a web-accessible directory for easy sharing
 
-Simply open `index.html` in your browser to access links to all your exported libraries.
+Simply open the generated `index.html` in your browser to access links to all your exported libraries.
 
 ## Diagnostic Tool
 
