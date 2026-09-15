@@ -3,7 +3,8 @@
 Plexee Library Exporter
 =======================
 A command-line tool that connects to a Plex Media Server and exports
-library titles to CSV or plain-text files.
+library titles to CSV, plain-text, or HTML files.  One, several, or
+all libraries can be exported in a single run.
 
 Usage:
     python3 plex_library_exporter.py
@@ -238,46 +239,124 @@ def discover_libraries(server: PlexServer) -> list:
     return sections
 
 
-def select_library(sections: list, config: dict) -> object:
-    """Display available libraries, highlight the previously selected one (if
-    any), and let the user choose. Returns the chosen library section."""
+def _parse_library_choice(choice: str, count: int) -> list[int] | None:
+    """Parse a library selection string into 1-based indices.
 
-    last_library = config.get("last_library", "")
+    Accepts:
+      - ``all`` / ``*``  – every library
+      - a single number  – e.g. ``2``
+      - comma-separated  – e.g. ``1,3,5``
+      - ranges           – e.g. ``1-3`` or ``1,3-5``
+      - space-separated  – e.g. ``1 3 5``
+
+    Returns a de-duplicated list of valid indices, or ``None`` if the
+    input cannot be parsed.
+    """
+    raw = choice.strip().lower()
+    if raw in ("all", "*", "a"):
+        return list(range(1, count + 1))
+
+    # Normalise separators: commas and whitespace both work; ranges use '-'.
+    tokens = raw.replace(",", " ").split()
+    if not tokens:
+        return None
+
+    indices: list[int] = []
+    seen: set[int] = set()
+    for token in tokens:
+        if "-" in token and not token.startswith("-"):
+            parts = token.split("-", 1)
+            try:
+                start = int(parts[0])
+                end = int(parts[1])
+            except ValueError:
+                return None
+            if start > end:
+                start, end = end, start
+            for n in range(start, end + 1):
+                if not 1 <= n <= count:
+                    return None
+                if n not in seen:
+                    seen.add(n)
+                    indices.append(n)
+        else:
+            try:
+                n = int(token)
+            except ValueError:
+                return None
+            if not 1 <= n <= count:
+                return None
+            if n not in seen:
+                seen.add(n)
+                indices.append(n)
+
+    return indices or None
+
+
+def select_libraries(sections: list, config: dict) -> list:
+    """Display available libraries and let the user pick one, several, or all.
+
+    Returns a list of chosen library section objects (never empty).
+    """
+    last_libraries = config.get("last_libraries")
+    if not last_libraries:
+        # Backward compatibility with the old single-library key.
+        last_one = config.get("last_library", "")
+        last_libraries = [last_one] if last_one else []
+
+    last_set = set(last_libraries)
 
     print("\n--- Available Libraries ---")
     for idx, section in enumerate(sections, start=1):
-        marker = " ← last used" if section.title == last_library else ""
+        marker = " ← last used" if section.title in last_set else ""
         print(f"  {idx}. {section.title} ({section.type}){marker}")
 
-    # Determine a default selection based on last-used library.
-    default_idx = None
-    for idx, section in enumerate(sections, start=1):
-        if section.title == last_library:
-            default_idx = idx
-            break
+    print("\n  Enter a number, comma-separated numbers (1,3,5), a range (1-3),")
+    print("  or 'all' to export every library.")
+
+    # Build a default string from the previously selected libraries.
+    default_str = None
+    if last_libraries:
+        default_indices = [
+            str(idx)
+            for idx, section in enumerate(sections, start=1)
+            if section.title in last_set
+        ]
+        if default_indices:
+            if len(default_indices) == len(sections):
+                default_str = "all"
+            else:
+                default_str = ",".join(default_indices)
 
     while True:
-        prompt_msg = "Select a library by number"
-        if default_idx is not None:
-            prompt_msg += f" [default: {default_idx}]"
+        prompt_msg = "Select library/libraries"
+        if default_str is not None:
+            prompt_msg += f" [default: {default_str}]"
         prompt_msg += ": "
 
         choice = input(prompt_msg).strip()
-        if choice == "" and default_idx is not None:
-            choice = str(default_idx)
+        if choice == "" and default_str is not None:
+            choice = default_str
 
-        try:
-            choice_int = int(choice)
-            if 1 <= choice_int <= len(sections):
-                selected = sections[choice_int - 1]
-                # Remember this selection for next time.
-                config["last_library"] = selected.title
-                save_config(config)
-                print(f"✓ Selected library: {selected.title}")
-                return selected
-        except ValueError:
-            pass
-        print(f"Invalid selection. Please enter a number between 1 and {len(sections)}.")
+        indices = _parse_library_choice(choice, len(sections))
+        if indices:
+            selected = [sections[i - 1] for i in indices]
+            titles = [s.title for s in selected]
+            config["last_library"] = titles[0]
+            config["last_libraries"] = titles
+            save_config(config)
+            if len(selected) == 1:
+                print(f"✓ Selected library: {titles[0]}")
+            elif len(selected) == len(sections):
+                print(f"✓ Selected all {len(selected)} libraries")
+            else:
+                print(f"✓ Selected {len(selected)} libraries: {', '.join(titles)}")
+            return selected
+
+        print(
+            f"Invalid selection. Enter a number 1–{len(sections)}, "
+            "comma-separated numbers, a range, or 'all'."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +449,13 @@ def _format_date(dt) -> str:
         return ""
 
 
-def _export_html(entries: list[dict], is_audiobook: bool, library_name: str, filename: str) -> None:
+def _export_html(
+    entries: list[dict],
+    library_name: str,
+    filename: str,
+    include_author: bool = False,
+    include_library: bool = False,
+) -> None:
     """Generate a modern HTML5 page with a sortable table of library entries."""
     
     # HTML template with inline CSS and JavaScript for sorting
@@ -536,6 +621,10 @@ def _export_html(entries: list[dict], is_audiobook: bool, library_name: str, fil
             color: #00dd00;
         }}
         
+        .library-cell {{
+            color: #00cc66;
+        }}
+        
         footer {{
             text-align: center;
             padding: 20px;
@@ -656,38 +745,38 @@ def _export_html(entries: list[dict], is_audiobook: bool, library_name: str, fil
 </body>
 </html>"""
     
-    # Generate table headers
-    if is_audiobook:
-        headers = """                        <th class="sortable">Title</th>
-                        <th class="sortable">Author</th>
-                        <th class="sortable">Date Added</th>"""
-    else:
-        headers = """                        <th class="sortable">Title</th>
-                        <th class="sortable">Date Added</th>"""
-    
+    # Generate table headers.  Date Added is always last so the default
+    # sort (newest first) can target headers.length - 1.
+    header_cells = ['                        <th class="sortable">Title</th>']
+    if include_library:
+        header_cells.append('                        <th class="sortable">Library</th>')
+    if include_author:
+        header_cells.append('                        <th class="sortable">Author</th>')
+    header_cells.append('                        <th class="sortable">Date Added</th>')
+    headers = "\n".join(header_cells)
+
+    def _esc(value: str) -> str:
+        return (
+            (value or "")
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+
     # Generate table rows
     rows_html = []
     for entry in entries:
-        title = entry.get("title", "")
-        # Escape HTML special characters
-        title = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        
+        title = _esc(entry.get("title", ""))
         date_added = _format_date(entry.get("added_at"))
-        
-        if is_audiobook:
-            author = entry.get("author", "")
-            author = author.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            row = f"""                    <tr>
-                        <td class="title-cell">{title}</td>
-                        <td class="author-cell">{author}</td>
-                        <td class="date-cell">{date_added}</td>
-                    </tr>"""
-        else:
-            row = f"""                    <tr>
-                        <td class="title-cell">{title}</td>
-                        <td class="date-cell">{date_added}</td>
-                    </tr>"""
-        
+        cells = [f'                        <td class="title-cell">{title}</td>']
+        if include_library:
+            library = _esc(entry.get("library", ""))
+            cells.append(f'                        <td class="library-cell">{library}</td>')
+        if include_author:
+            author = _esc(entry.get("author", ""))
+            cells.append(f'                        <td class="author-cell">{author}</td>')
+        cells.append(f'                        <td class="date-cell">{date_added}</td>')
+        row = "                    <tr>\n" + "\n".join(cells) + "\n                    </tr>"
         rows_html.append(row)
     
     # Get current timestamp
@@ -708,58 +797,90 @@ def _export_html(entries: list[dict], is_audiobook: bool, library_name: str, fil
         fh.write(html_content)
 
 
-def export_titles(section, fmt: str, filename: str) -> None:
-    """Fetch all items from the selected library section and write their
-    titles to *filename* in the requested format.
-
-    For audiobook / music libraries the function drills down to the album
-    level (artist → album) so that actual book titles are exported instead
-    of author names.  A CSV export of an audiobook library includes both
-    "Title" and "Author" columns; a text export lists one book per line
-    as "Book Title by Author Name".  An HTML export creates a modern,
-    sortable table with Title, Date Added, and (for audiobooks) Author.
-    """
-
+def _fetch_section_entries(section) -> list[dict]:
+    """Fetch titles from *section* and tag each entry with the library name."""
     print(f"Fetching items from '{section.title}'…")
-
-    is_audiobook = _is_audiobook_library(section)
-
-    if is_audiobook:
+    if _is_audiobook_library(section):
         entries = _fetch_audiobook_titles(section)
     else:
         entries = _fetch_standard_titles(section)
+    for entry in entries:
+        entry["library"] = section.title
+    print(f"  Found {len(entries)} title(s).")
+    return entries
+
+
+def _display_name(sections: list) -> str:
+    """Human-readable name for the export heading / HTML title."""
+    if len(sections) == 1:
+        return sections[0].title
+    return f"{len(sections)} Libraries"
+
+
+def export_titles(sections: list, fmt: str, filename: str) -> None:
+    """Fetch items from one or more library sections and write them to
+    *filename* in the requested format.
+
+    For audiobook / music libraries the function drills down to the album
+    level (artist → album) so that actual book titles are exported instead
+    of author names.
+
+    When more than one library is selected, a Library column is included
+    (CSV / HTML) so titles can be distinguished.  Audiobook Author columns
+    are included whenever any selected library is an audiobook library.
+    """
+    entries: list[dict] = []
+    for section in sections:
+        entries.extend(_fetch_section_entries(section))
 
     if not entries:
-        print("The selected library is empty – nothing to export.")
+        print("The selected library/libraries are empty – nothing to export.")
         return
 
-    print(f"Found {len(entries)} title(s). Writing to '{filename}'…")
+    include_library = len(sections) > 1
+    include_author = any("author" in e for e in entries)
+    display_name = _display_name(sections)
+
+    print(f"Writing {len(entries)} title(s) to '{filename}'…")
 
     try:
         if fmt == "csv":
             with open(filename, "w", newline="", encoding="utf-8") as fh:
                 writer = csv.writer(fh)
-                if is_audiobook:
-                    writer.writerow(["Title", "Author", "Date Added"])
-                    for entry in entries:
-                        added = _format_date(entry.get("added_at"))
-                        writer.writerow([entry["title"], entry.get("author", ""), added])
-                else:
-                    writer.writerow(["Title", "Date Added"])
-                    for entry in entries:
-                        added = _format_date(entry.get("added_at"))
-                        writer.writerow([entry["title"], added])
+                header = ["Title"]
+                if include_library:
+                    header.append("Library")
+                if include_author:
+                    header.append("Author")
+                header.append("Date Added")
+                writer.writerow(header)
+                for entry in entries:
+                    row = [entry["title"]]
+                    if include_library:
+                        row.append(entry.get("library", ""))
+                    if include_author:
+                        row.append(entry.get("author", ""))
+                    row.append(_format_date(entry.get("added_at")))
+                    writer.writerow(row)
         elif fmt == "html":
-            _export_html(entries, is_audiobook, section.title, filename)
+            _export_html(
+                entries,
+                display_name,
+                filename,
+                include_author=include_author,
+                include_library=include_library,
+            )
         else:
             # Plain text – one title per line.
-            # Audiobooks: "Book Title by Author Name"; others: title only.
+            # Multi-library: "Title [Library]"; audiobooks: "Title by Author".
             with open(filename, "w", encoding="utf-8") as fh:
                 for entry in entries:
-                    if is_audiobook and entry.get("author"):
-                        fh.write(f"{entry['title']} by {entry['author']}\n")
-                    else:
-                        fh.write(entry["title"] + "\n")
+                    line = entry["title"]
+                    if include_author and entry.get("author"):
+                        line = f"{line} by {entry['author']}"
+                    if include_library and entry.get("library"):
+                        line = f"{line} [{entry['library']}]"
+                    fh.write(line + "\n")
     except OSError as exc:
         print(f"Error writing file: {exc}")
         sys.exit(1)
@@ -785,8 +906,8 @@ def main():
     # Step 3 – Discover libraries.
     sections = discover_libraries(server)
 
-    # Step 4 – Let the user pick a library.
-    selected = select_library(sections, config)
+    # Step 4 – Let the user pick one, several, or all libraries.
+    selected = select_libraries(sections, config)
 
     # Step 5 – Choose export format and filename.
     fmt = choose_export_format()
