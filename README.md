@@ -12,6 +12,7 @@ A command-line tool that connects to a Plex Media Server and exports library tit
 - **Persistent Configuration**: Remembers your server settings, last-used libraries, and per-library filenames
 - **Connection Debugging**: Detailed connection status and error reporting
 - **HTML Theme**: Terminal-style green-on-black aesthetic with sortable tables
+- **IMDb ratings**: Optional OMDb lookups for movie libraries, cached locally
 
 ## Installation
 
@@ -72,9 +73,9 @@ When exporting multiple libraries, you'll be prompted for a **separate filename 
 
 ## Export Formats
 
-- **CSV**: Includes Title, Author (for audiobook libraries), and Date Added
-- **Text**: One title per line (audiobooks: "Title by Author")
-- **HTML**: Sortable table with terminal theme, defaults to newest items first
+- **CSV**: Includes Title, Author (for audiobook libraries), IMDb Rating (movies, when enabled), and Date Added
+- **Text**: One title per line (audiobooks: "Title by Author"; movies with ratings: "Title (7.5)")
+- **HTML**: Sortable table with terminal theme, defaults to newest items first; IMDb Rating column for movies when enabled
 
 ### HTML Index Page
 
@@ -92,6 +93,18 @@ This makes it easy to:
 - Place the index in a web-accessible directory for easy sharing
 
 Simply open the generated `index.html` in your browser to access links to all your exported libraries.
+
+## IMDb Ratings (movie libraries)
+
+When you export a **movie** library, the exporter can look up IMDb ratings via [OMDb](https://www.omdbapi.com/).
+
+1. Get a free API key at https://www.omdbapi.com/apikey.aspx (1,000 requests/day on the free tier).
+2. When prompted, paste the key (or press Enter to skip). Type `skip` later to disable ratings.
+3. The key is stored in `config.json` as `omdb_api_key`. Automated runs reuse it without prompting.
+
+Lookups prefer the IMDb id already stored on the Plex item (`imdb://tt…`). If that is missing, the exporter falls back to a title + year search. Ratings are cached in `omdb_cache.json` next to the script so later runs only fetch new titles.
+
+TV shows, photos, and audiobooks are not rated this way.
 
 ## Diagnostic Tool
 

@@ -1,7 +1,8 @@
 # Plexee Library Exporter - ignored files
 
-# User configuration (contains server host, port, and API token)
+# User configuration (contains server host, port, API token, OMDb key)
 config.json
+omdb_cache.json
 
 # Exported library files
 *.csv
