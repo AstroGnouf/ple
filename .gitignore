@@ -1,4 +1,4 @@
-# Plex Library Exporter - ignored files
+# Plexee Library Exporter - ignored files
 
 # User configuration (contains server host, port, and API token)
 config.json
