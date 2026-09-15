@@ -76,6 +76,17 @@ When exporting multiple libraries, you'll be prompted for a **separate filename 
 - **Text**: One title per line (audiobooks: "Title by Author")
 - **HTML**: Sortable table with terminal theme, defaults to newest items first
 
+### HTML Index Page
+
+When exporting **multiple libraries in HTML format**, the exporter automatically creates an `index.html` page with button-style links to each library's HTML file. The index page uses the same green-on-black terminal aesthetic as the individual library pages.
+
+This makes it easy to:
+- Navigate between multiple library exports
+- Create a central hub for all your exported libraries
+- Share a single entry point to all your library data
+
+Simply open `index.html` in your browser to access links to all your exported libraries.
+
 ## Diagnostic Tool
 
 Use `plex_diagnostic.py` for troubleshooting connection issues:

@@ -1106,6 +1106,236 @@ def export_titles(sections: list, fmt: str, filename: str) -> None:
     print(f"✓ Export complete! {len(entries)} title(s) saved to '{filename}'.")
 
 
+def create_index_page(library_files: list[tuple[str, str]], output_dir: str = ".") -> None:
+    """Create an index.html page with links to each exported HTML file.
+    
+    *library_files* is a list of (library_name, filename) tuples.
+    *output_dir* is the directory where the index.html will be written.
+    """
+    index_template = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Library Index - Plexee Library Exporter</title>
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        
+        body {{
+            font-family: 'Courier New', 'Monaco', 'Consolas', monospace;
+            background: #000000;
+            color: #00ff00;
+            padding: 20px;
+            min-height: 100vh;
+        }}
+        
+        .container {{
+            max-width: 900px;
+            margin: 0 auto;
+            background: #000000;
+            border: 2px solid #00ff00;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+            overflow: hidden;
+        }}
+        
+        header {{
+            background: #000000;
+            color: #00ff00;
+            padding: 30px;
+            text-align: center;
+            border-bottom: 2px solid #00ff00;
+        }}
+        
+        header h1 {{
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            text-shadow: 0 0 10px #00ff00;
+        }}
+        
+        header p {{
+            font-size: 1.1em;
+            opacity: 0.8;
+        }}
+        
+        .stats {{
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(0, 255, 0, 0.05);
+            border: 1px solid #00ff00;
+        }}
+        
+        .stat {{
+            text-align: center;
+        }}
+        
+        .stat-value {{
+            font-size: 2em;
+            font-weight: bold;
+            color: #00ff00;
+            text-shadow: 0 0 10px #00ff00;
+        }}
+        
+        .stat-label {{
+            font-size: 0.9em;
+            opacity: 0.7;
+            text-transform: uppercase;
+        }}
+        
+        .content {{
+            padding: 40px;
+        }}
+        
+        .library-grid {{
+            display: grid;
+            gap: 20px;
+            margin-top: 20px;
+        }}
+        
+        .library-button {{
+            display: block;
+            padding: 20px 30px;
+            background: rgba(0, 255, 0, 0.05);
+            border: 2px solid #00ff00;
+            color: #00ff00;
+            text-decoration: none;
+            text-align: center;
+            font-size: 1.2em;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            transition: all 0.3s;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.2);
+        }}
+        
+        .library-button:hover {{
+            background: rgba(0, 255, 0, 0.15);
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
+            text-shadow: 0 0 10px #00ff00;
+            transform: translateY(-2px);
+        }}
+        
+        .library-button:active {{
+            transform: translateY(0);
+        }}
+        
+        .library-name {{
+            display: block;
+            margin-bottom: 5px;
+        }}
+        
+        .library-arrow {{
+            font-size: 0.8em;
+            opacity: 0.7;
+        }}
+        
+        footer {{
+            text-align: center;
+            padding: 20px;
+            color: #00ff00;
+            font-size: 0.9em;
+            border-top: 2px solid #00ff00;
+            opacity: 0.7;
+        }}
+        
+        @media (max-width: 768px) {{
+            body {{
+                padding: 10px;
+            }}
+            
+            header {{
+                padding: 20px;
+            }}
+            
+            header h1 {{
+                font-size: 1.8em;
+            }}
+            
+            .content {{
+                padding: 20px;
+            }}
+            
+            .library-button {{
+                padding: 15px 20px;
+                font-size: 1em;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Library Index</h1>
+            <p>Plexee Library Exporter</p>
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value">{library_count}</div>
+                    <div class="stat-label">Exported Libraries</div>
+                </div>
+            </div>
+        </header>
+        
+        <div class="content">
+            <div class="library-grid">
+{library_buttons}
+            </div>
+        </div>
+        
+        <footer>
+            <p>Generated by Plexee Library Exporter • {timestamp}</p>
+        </footer>
+    </div>
+</body>
+</html>"""
+
+    def _esc(value: str) -> str:
+        return (
+            (value or "")
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+
+    # Generate library buttons
+    button_html = []
+    for library_name, filename in library_files:
+        # Extract just the filename (not full path)
+        base_filename = os.path.basename(filename)
+        button = f'''                <a href="{_esc(base_filename)}" class="library-button">
+                    <span class="library-name">{_esc(library_name)}</span>
+                    <span class="library-arrow">→</span>
+                </a>'''
+        button_html.append(button)
+    
+    # Get current timestamp
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Fill in template
+    html_content = index_template.format(
+        library_count=len(library_files),
+        library_buttons="\n".join(button_html),
+        timestamp=timestamp
+    )
+    
+    # Write to index.html in the output directory
+    index_path = os.path.join(output_dir, "index.html")
+    try:
+        with open(index_path, "w", encoding="utf-8") as fh:
+            fh.write(html_content)
+        print(f"✓ Index page created: {index_path}")
+    except OSError as exc:
+        print(f"Warning: Could not create index page: {exc}")
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -1161,6 +1391,9 @@ def main(argv: list[str] | None = None) -> None:
     if len(selected) > 1:
         print(f"\n--- Exporting {len(selected)} libraries ---")
 
+    # Track exported HTML files for index page generation
+    exported_html_files = []
+
     for section in selected:
         last_filename = library_filenames.get(section.title)
         filename = choose_filename(
@@ -1177,7 +1410,17 @@ def main(argv: list[str] | None = None) -> None:
         save_config(config)
 
         export_titles([section], fmt, filename)
+        
+        # Track HTML exports for index page
+        if fmt == "html":
+            exported_html_files.append((section.title, filename))
+        
         print()
+
+    # Step 7 – Create index.html if multiple libraries were exported as HTML
+    if fmt == "html" and len(exported_html_files) > 1:
+        print("--- Creating Index Page ---")
+        create_index_page(exported_html_files)
 
 
 if __name__ == "__main__":
