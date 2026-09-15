@@ -39,6 +39,8 @@ When prompted, you can:
 
 When exporting multiple libraries, you'll be prompted for a **separate filename for each library**. The exporter remembers each library's last filename for convenient re-runs.
 
+**Note**: The correct file extension (`.csv`, `.txt`, or `.html`) is automatically added based on your chosen format, so just enter the base filename (e.g., `movies` becomes `movies.csv`).
+
 ## Export Formats
 
 - **CSV**: Includes Title, Author (for audiobook libraries), and Date Added

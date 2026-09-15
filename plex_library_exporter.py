@@ -373,23 +373,42 @@ def choose_export_format() -> str:
 
 
 def choose_filename(default_ext: str, library_name: str = None, last_filename: str = None) -> str:
-    """Prompt for an output filename, optionally suggesting the last one used."""
-    prompt = f"Enter output filename"
+    """Prompt for an output filename and automatically add the correct extension.
+    
+    The user can enter a filename with or without extension; the correct
+    extension for the current format is always applied.
+    """
+    import os
+    
+    # Strip the extension from last_filename to show just the base name.
+    last_base = None
+    if last_filename:
+        last_base = os.path.splitext(last_filename)[0]
+    
+    prompt = f"Enter filename"
     if library_name:
         prompt = f"Filename for '{library_name}'"
     
-    if last_filename:
-        prompt += f" [last: {last_filename}]"
+    if last_base:
+        prompt += f" [last: {last_base}]"
     else:
-        prompt += f" (e.g. titles.{default_ext})"
-    prompt += ": "
+        prompt += f" (e.g. titles)"
+    prompt += f" (.{default_ext} added automatically): "
     
     while True:
         name = input(prompt).strip()
-        if name == "" and last_filename:
-            return last_filename
+        if name == "" and last_base:
+            name = last_base
+        
         if name:
-            return name
+            # Strip any extension the user might have included.
+            base_name = os.path.splitext(name)[0]
+            if not base_name:
+                print("Filename cannot be empty.")
+                continue
+            # Always add the correct extension for the current format.
+            return f"{base_name}.{default_ext}"
+        
         print("Filename cannot be empty.")
 
 
