@@ -37,12 +37,12 @@ When prompted, you can:
 - Enter a range (e.g. `1-3`) or mix them (`1,3-5`)
 - Enter `all` to export every library
 
-Multiple libraries are written to a **single** file. CSV and HTML include a Library column; text exports append `[Library Name]` to each line.
+When exporting multiple libraries, you'll be prompted for a **separate filename for each library**. The exporter remembers each library's last filename for convenient re-runs.
 
 ## Export Formats
 
-- **CSV**: Includes Title, Library (when exporting more than one), Author (audiobooks), and Date Added
-- **Text**: One title per line (audiobooks: "Title by Author"; multi-library: "Title [Library]")
+- **CSV**: Includes Title, Author (for audiobook libraries), and Date Added
+- **Text**: One title per line (audiobooks: "Title by Author")
 - **HTML**: Sortable table with terminal theme, defaults to newest items first
 
 ## Diagnostic Tool

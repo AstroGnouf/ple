@@ -372,10 +372,22 @@ def choose_export_format() -> str:
         print("Invalid choice. Please enter 'csv', 'text', or 'html'.")
 
 
-def choose_filename(default_ext: str) -> str:
-    """Prompt for an output filename, suggesting a sensible default extension."""
+def choose_filename(default_ext: str, library_name: str = None, last_filename: str = None) -> str:
+    """Prompt for an output filename, optionally suggesting the last one used."""
+    prompt = f"Enter output filename"
+    if library_name:
+        prompt = f"Filename for '{library_name}'"
+    
+    if last_filename:
+        prompt += f" [last: {last_filename}]"
+    else:
+        prompt += f" (e.g. titles.{default_ext})"
+    prompt += ": "
+    
     while True:
-        name = input(f"Enter output filename (e.g. titles.{default_ext}): ").strip()
+        name = input(prompt).strip()
+        if name == "" and last_filename:
+            return last_filename
         if name:
             return name
         print("Filename cannot be empty.")
@@ -909,7 +921,7 @@ def main():
     # Step 4 – Let the user pick one, several, or all libraries.
     selected = select_libraries(sections, config)
 
-    # Step 5 – Choose export format and filename.
+    # Step 5 – Choose export format.
     fmt = choose_export_format()
     if fmt == "csv":
         default_ext = "csv"
@@ -917,10 +929,26 @@ def main():
         default_ext = "html"
     else:
         default_ext = "txt"
-    filename = choose_filename(default_ext)
 
-    # Step 6 – Export!
-    export_titles(selected, fmt, filename)
+    # Step 6 – For each library, prompt for filename and export.
+    # Retrieve per-library filename mappings from config.
+    library_filenames = config.get("library_filenames", {})
+    
+    if len(selected) > 1:
+        print(f"\n--- Exporting {len(selected)} libraries ---")
+    
+    for section in selected:
+        last_filename = library_filenames.get(section.title)
+        filename = choose_filename(default_ext, section.title, last_filename)
+        
+        # Remember this filename for next time.
+        library_filenames[section.title] = filename
+        config["library_filenames"] = library_filenames
+        save_config(config)
+        
+        # Export this library to its own file.
+        export_titles([section], fmt, filename)
+        print()
 
 
 if __name__ == "__main__":
