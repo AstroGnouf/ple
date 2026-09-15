@@ -4,18 +4,8 @@
 import os
 import sys
 
-# Test the filename extension logic in isolation.
-def apply_extension(name: str, default_ext: str, last_filename: str = None) -> str:
-    """Simulates the choose_filename logic without user input."""
-    if name == "" and last_filename:
-        last_base = os.path.splitext(last_filename)[0]
-        name = last_base
-    
-    if name:
-        base_name = os.path.splitext(name)[0]
-        if base_name:
-            return f"{base_name}.{default_ext}"
-    return None
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from plex_library_exporter import apply_extension  # noqa: E402
 
 
 def test_adds_extension():
@@ -45,6 +35,11 @@ def test_handles_dots_in_filename():
     assert apply_extension("my.file.name", "csv") == "my.file.csv"
     assert apply_extension("my.file.name.old", "html") == "my.file.name.html"
     assert apply_extension("report.2024.csv", "html") == "report.2024.html"
+
+
+def test_empty_without_last():
+    assert apply_extension("", "csv") is None
+    assert apply_extension(".", "csv") is None
 
 
 if __name__ == "__main__":

@@ -8,16 +8,21 @@ all libraries can be exported in a single run.
 
 Usage:
     python3 plex_library_exporter.py
+    python3 plex_library_exporter.py --setup
 
-On first run the tool prompts for server hostname/IP and API token,
-validates the connection, discovers available libraries, and saves the
-configuration to config.json so subsequent runs remember the server
-and last-selected library.
+On first run the tool asks whether to use Interactive Manual or
+Automated mode, then prompts for server hostname/IP, port, and API
+token.  Configuration is saved to config.json.
+
+Automated mode is cron-friendly: later runs use saved settings and
+never prompt.  Re-run with --setup to change mode or export settings.
 """
 
+import argparse
 import csv
 import json
 import os
+import re
 import sys
 import traceback
 
@@ -37,6 +42,12 @@ except ImportError:
 
 # Path to the persistent configuration file (same directory as this script).
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+
+MODE_INTERACTIVE = "interactive"
+MODE_AUTOMATED = "automated"
+VALID_MODES = (MODE_INTERACTIVE, MODE_AUTOMATED)
+VALID_FORMATS = ("csv", "text", "html")
+FORMAT_EXTENSIONS = {"csv": "csv", "text": "txt", "html": "html"}
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +73,121 @@ def save_config(config: dict) -> None:
             json.dump(config, fh, indent=2)
     except OSError as exc:
         print(f"Warning: Could not save config file ({exc}).")
+
+
+def stdin_is_interactive() -> bool:
+    """Return True when stdin is a terminal (safe to prompt)."""
+    try:
+        return sys.stdin.isatty()
+    except Exception:
+        return False
+
+
+def is_automated(config: dict) -> bool:
+    """Return True when the saved run mode is Automated."""
+    return str(config.get("mode", "")).strip().lower() == MODE_AUTOMATED
+
+
+def extension_for_format(fmt: str) -> str:
+    """Return the file extension for an export format (without the dot)."""
+    return FORMAT_EXTENSIONS.get(fmt, "txt")
+
+
+def sanitize_filename(name: str) -> str:
+    """Turn a library title into a safe filename stem."""
+    stem = (name or "library").strip()
+    stem = re.sub(r'[<>:"/\\|?*]', "_", stem)
+    stem = re.sub(r"\s+", "_", stem)
+    stem = stem.strip(" ._")
+    return stem or "library"
+
+
+def apply_extension(name: str, default_ext: str, last_filename: str | None = None) -> str | None:
+    """Resolve a user-supplied or remembered filename to *name.ext*.
+
+    Empty *name* falls back to the stem of *last_filename*.  Any extension
+    the user typed is stripped and replaced with *default_ext*.
+    """
+    if name == "" and last_filename:
+        name = os.path.splitext(last_filename)[0]
+    if not name or name in (".", ".."):
+        return None
+    base_name = os.path.splitext(name)[0]
+    if not base_name or base_name in (".", ".."):
+        return None
+    return f"{base_name}.{default_ext}"
+
+
+def filename_for_library(library_name: str, fmt: str, config: dict) -> str:
+    """Return the output path for *library_name* without prompting.
+
+    Prefers a previously saved filename (extension updated to match *fmt*),
+    otherwise uses a sanitised copy of the library title.
+    """
+    ext = extension_for_format(fmt)
+    saved = (config.get("library_filenames") or {}).get(library_name)
+    resolved = apply_extension("", ext, saved)
+    if resolved:
+        return resolved
+    return f"{sanitize_filename(library_name)}.{ext}"
+
+
+def prompt_for_mode() -> str:
+    """Ask whether this install is Interactive Manual or Automated."""
+    print("\n--- Run Mode ---")
+    print("  1. Interactive Manual  – prompt for libraries, format, and")
+    print("                           filenames on every run")
+    print("  2. Automated           – no prompts after this setup; reuse")
+    print("                           saved settings (suitable for cron)")
+    while True:
+        choice = input("Select mode [1]: ").strip().lower()
+        if choice in ("", "1", "i", "interactive", "manual", "interactive manual"):
+            return MODE_INTERACTIVE
+        if choice in ("2", "a", "auto", "automated"):
+            return MODE_AUTOMATED
+        print("Invalid choice. Enter 1 (Interactive Manual) or 2 (Automated).")
+
+
+def ensure_mode(config: dict, force_setup: bool = False) -> tuple[str, bool]:
+    """Return ``(mode, just_configured)``.
+
+    Prompts on first run or when *force_setup* is True.  Exits with a clear
+    error if a prompt is required but stdin is not a TTY (e.g. cron before
+    the first interactive setup).
+    """
+    current = str(config.get("mode", "")).strip().lower()
+    if current in VALID_MODES and not force_setup:
+        return current, False
+
+    if not stdin_is_interactive():
+        print(
+            "Error: Run mode is not configured, and this session cannot "
+            "prompt (stdin is not a terminal).\n"
+            "Run once interactively to choose Interactive Manual or "
+            "Automated mode:\n"
+            f"  python3 {os.path.basename(sys.argv[0])}"
+        )
+        sys.exit(1)
+
+    mode = prompt_for_mode()
+    config["mode"] = mode
+    save_config(config)
+    label = "Interactive Manual" if mode == MODE_INTERACTIVE else "Automated"
+    print(f"✓ Run mode saved: {label}")
+    if mode == MODE_AUTOMATED:
+        print("  This setup run will still ask for libraries, format, and")
+        print("  filenames.  Later Automated runs will reuse those settings.")
+    return mode, True
+
+
+def abort_if_unattended(reason: str) -> None:
+    """Exit when a prompt is needed but stdin is not a terminal."""
+    if stdin_is_interactive():
+        return
+    print(f"Error: {reason}")
+    print("This process has no terminal, so it cannot prompt for input.")
+    print("Configure Automated mode interactively first, or run from a terminal.")
+    sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -182,10 +308,13 @@ def prompt_for_credentials() -> tuple:
     return host, port, token
 
 
-def establish_connection(config: dict) -> PlexServer:
+def establish_connection(config: dict, automated: bool = False) -> PlexServer:
     """Try to connect using saved config or prompt the user. Allows retries on
     failure. Returns a connected PlexServer instance and updates *config*
-    in-place with the validated credentials."""
+    in-place with the validated credentials.
+
+    Automated / non-TTY runs never prompt: they use saved credentials or exit.
+    """
 
     host = config.get("host", "")
     token = config.get("token", "")
@@ -200,7 +329,15 @@ def establish_connection(config: dict) -> PlexServer:
             return server
         except Exception:
             pass  # Debug details already printed by connect_to_plex.
+        if automated or not stdin_is_interactive():
+            print("Error: Saved credentials did not work. Cannot prompt in Automated mode.")
+            print("Run interactively with --setup to re-enter server details.")
+            sys.exit(1)
         print("Saved credentials did not work. Please re-enter them.\n")
+
+    abort_if_unattended(
+        "Plex server credentials are missing or invalid."
+    )
 
     # Interactive prompt loop with retry support.
     while True:
@@ -293,17 +430,38 @@ def _parse_library_choice(choice: str, count: int) -> list[int] | None:
     return indices or None
 
 
-def select_libraries(sections: list, config: dict) -> list:
+def _remembered_libraries(sections: list, config: dict) -> list:
+    """Return section objects matching the last saved library titles."""
+    last_libraries = config.get("last_libraries")
+    if not last_libraries:
+        last_one = config.get("last_library", "")
+        last_libraries = [last_one] if last_one else []
+    if not last_libraries:
+        return []
+    by_title = {section.title: section for section in sections}
+    return [by_title[title] for title in last_libraries if title in by_title]
+
+
+def _announce_selection(selected: list, total: int) -> None:
+    titles = [s.title for s in selected]
+    if len(selected) == 1:
+        print(f"✓ Selected library: {titles[0]}")
+    elif len(selected) == total:
+        print(f"✓ Selected all {len(selected)} libraries")
+    else:
+        print(f"✓ Selected {len(selected)} libraries: {', '.join(titles)}")
+
+
+def select_libraries(sections: list, config: dict, automated: bool = False) -> list:
     """Display available libraries and let the user pick one, several, or all.
 
-    Returns a list of chosen library section objects (never empty).
+    In Automated mode the last saved selection is reused (or every library
+    if none has been saved).  Returns a list of section objects (never empty).
     """
     last_libraries = config.get("last_libraries")
     if not last_libraries:
-        # Backward compatibility with the old single-library key.
         last_one = config.get("last_library", "")
         last_libraries = [last_one] if last_one else []
-
     last_set = set(last_libraries)
 
     print("\n--- Available Libraries ---")
@@ -311,10 +469,23 @@ def select_libraries(sections: list, config: dict) -> list:
         marker = " ← last used" if section.title in last_set else ""
         print(f"  {idx}. {section.title} ({section.type}){marker}")
 
+    if automated:
+        selected = _remembered_libraries(sections, config)
+        if not selected:
+            selected = list(sections)
+            print("No saved library selection – exporting all libraries.")
+        _announce_selection(selected, len(sections))
+        titles = [s.title for s in selected]
+        config["last_library"] = titles[0]
+        config["last_libraries"] = titles
+        save_config(config)
+        return selected
+
+    abort_if_unattended("Library selection is required.")
+
     print("\n  Enter a number, comma-separated numbers (1,3,5), a range (1-3),")
     print("  or 'all' to export every library.")
 
-    # Build a default string from the previously selected libraries.
     default_str = None
     if last_libraries:
         default_indices = [
@@ -345,12 +516,7 @@ def select_libraries(sections: list, config: dict) -> list:
             config["last_library"] = titles[0]
             config["last_libraries"] = titles
             save_config(config)
-            if len(selected) == 1:
-                print(f"✓ Selected library: {titles[0]}")
-            elif len(selected) == len(sections):
-                print(f"✓ Selected all {len(selected)} libraries")
-            else:
-                print(f"✓ Selected {len(selected)} libraries: {', '.join(titles)}")
+            _announce_selection(selected, len(sections))
             return selected
 
         print(
@@ -363,52 +529,73 @@ def select_libraries(sections: list, config: dict) -> list:
 # Export logic
 # ---------------------------------------------------------------------------
 
-def choose_export_format() -> str:
-    """Ask the user whether to export as CSV, plain text, or HTML."""
+def choose_export_format(config: dict, automated: bool = False) -> str:
+    """Return the export format, prompting in Interactive mode.
+
+    Automated runs reuse ``config['export_format']`` (default: html).
+    """
+    saved = str(config.get("export_format", "")).strip().lower()
+    if saved not in VALID_FORMATS:
+        saved = ""
+
+    if automated:
+        fmt = saved or "html"
+        print(f"\nUsing saved export format: {fmt}")
+        return fmt
+
+    abort_if_unattended("Export format is required.")
+
     while True:
-        fmt = input("\nExport format – enter 'csv', 'text', or 'html': ").strip().lower()
-        if fmt in ("csv", "text", "html"):
+        prompt = "\nExport format – enter 'csv', 'text', or 'html'"
+        if saved:
+            prompt += f" [last: {saved}]"
+        prompt += ": "
+        fmt = input(prompt).strip().lower()
+        if fmt == "" and saved:
+            fmt = saved
+        if fmt in VALID_FORMATS:
+            config["export_format"] = fmt
+            save_config(config)
             return fmt
         print("Invalid choice. Please enter 'csv', 'text', or 'html'.")
 
 
-def choose_filename(default_ext: str, library_name: str = None, last_filename: str = None) -> str:
-    """Prompt for an output filename and automatically add the correct extension.
-    
-    The user can enter a filename with or without extension; the correct
-    extension for the current format is always applied.
+def choose_filename(
+    default_ext: str,
+    library_name: str = None,
+    last_filename: str = None,
+    automated: bool = False,
+) -> str:
+    """Return an output filename with the correct extension.
+
+    Interactive runs prompt (Enter reuses the last stem).  Automated runs
+    reuse the last filename or a sanitised library title – never prompt.
     """
-    import os
-    
-    # Strip the extension from last_filename to show just the base name.
-    last_base = None
-    if last_filename:
-        last_base = os.path.splitext(last_filename)[0]
-    
-    prompt = f"Enter filename"
+    if automated:
+        resolved = apply_extension("", default_ext, last_filename)
+        if resolved:
+            return resolved
+        stem = sanitize_filename(library_name or "library")
+        return f"{stem}.{default_ext}"
+
+    abort_if_unattended("An output filename is required.")
+
+    last_base = os.path.splitext(last_filename)[0] if last_filename else None
+
+    prompt = "Enter filename"
     if library_name:
         prompt = f"Filename for '{library_name}'"
-    
     if last_base:
         prompt += f" [last: {last_base}]"
     else:
-        prompt += f" (e.g. titles)"
+        prompt += " (e.g. titles)"
     prompt += f" (.{default_ext} added automatically): "
-    
+
     while True:
         name = input(prompt).strip()
-        if name == "" and last_base:
-            name = last_base
-        
-        if name:
-            # Strip any extension the user might have included.
-            base_name = os.path.splitext(name)[0]
-            if not base_name:
-                print("Filename cannot be empty.")
-                continue
-            # Always add the correct extension for the current format.
-            return f"{base_name}.{default_ext}"
-        
+        resolved = apply_extension(name, default_ext, last_filename)
+        if resolved:
+            return resolved
         print("Filename cannot be empty.")
 
 
@@ -923,49 +1110,72 @@ def export_titles(sections: list, fmt: str, filename: str) -> None:
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def main():
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Export Plex library titles to CSV, text, or HTML."
+    )
+    parser.add_argument(
+        "--setup",
+        action="store_true",
+        help="Re-run first-time prompts (mode, and later libraries/format/filenames).",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+
     print("=" * 50)
     print("       Plexee Library Exporter")
     print("=" * 50)
 
-    # Step 1 – Load any saved configuration.
+    # Step 1 – Load any saved configuration and resolve run mode.
     config = load_config()
+    mode, just_configured = ensure_mode(config, force_setup=args.setup)
+    # First-run / --setup still prompts for libraries, format, and filenames
+    # even when the saved mode is Automated, so cron has settings to reuse.
+    automated = mode == MODE_AUTOMATED and not just_configured
+    label = "Automated" if mode == MODE_AUTOMATED else "Interactive Manual"
+    print(f"Mode: {label}")
+    if automated:
+        print("Automated mode – using saved settings (no prompts).")
+    elif mode == MODE_AUTOMATED and just_configured:
+        print("Automated mode configured – collecting export settings for later runs.")
 
     # Step 2 – Connect to the Plex server (prompt if needed).
-    server = establish_connection(config)
+    server = establish_connection(config, automated=automated)
 
     # Step 3 – Discover libraries.
     sections = discover_libraries(server)
 
-    # Step 4 – Let the user pick one, several, or all libraries.
-    selected = select_libraries(sections, config)
+    # Step 4 – Pick one, several, or all libraries.
+    selected = select_libraries(sections, config, automated=automated)
 
     # Step 5 – Choose export format.
-    fmt = choose_export_format()
-    if fmt == "csv":
-        default_ext = "csv"
-    elif fmt == "html":
-        default_ext = "html"
-    else:
-        default_ext = "txt"
+    fmt = choose_export_format(config, automated=automated)
+    default_ext = extension_for_format(fmt)
 
-    # Step 6 – For each library, prompt for filename and export.
-    # Retrieve per-library filename mappings from config.
-    library_filenames = config.get("library_filenames", {})
-    
+    # Step 6 – For each library, resolve filename and export.
+    library_filenames = config.get("library_filenames") or {}
+
     if len(selected) > 1:
         print(f"\n--- Exporting {len(selected)} libraries ---")
-    
+
     for section in selected:
         last_filename = library_filenames.get(section.title)
-        filename = choose_filename(default_ext, section.title, last_filename)
-        
-        # Remember this filename for next time.
+        filename = choose_filename(
+            default_ext,
+            section.title,
+            last_filename,
+            automated=automated,
+        )
+        print(f"Output file for '{section.title}': {filename}")
+
         library_filenames[section.title] = filename
         config["library_filenames"] = library_filenames
+        config["export_format"] = fmt
         save_config(config)
-        
-        # Export this library to its own file.
+
         export_titles([section], fmt, filename)
         print()
 
