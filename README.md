@@ -5,7 +5,7 @@ A command-line tool that connects to a Plex Media Server and exports library tit
 ## Why Did I Make This?
 Have you or your users ever wanted a quick, easy and organized way of seeing what's in each of your libraries without firing up Plex? I sure have so I looked around and was surprised to find there wasn't really anything out there that did it, so I decided to create something myself and Plexee Library Exporter (PLE) was born!
 
-It first started out as simple manual way to export libraries into a text file which served the purpose. Soon I realized I could do quite a bit more including full automation, csv and html exports with a cool retro terminal theme.
+It first started out as simple manual way to export libraries into a text file which served the purpose. Soon I realized I could do quite a bit more including full automation, csv and html exports with a cool retro terminal theme and more!
 
 Oh, and yes this is 100% Vibe Coded trash! I had a great time creating it and wouldn't have been able to do it otherwise. 
 
