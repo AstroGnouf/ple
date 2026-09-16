@@ -123,4 +123,9 @@ Use `plex_diagnostic.py` for troubleshooting connection issues:
 ```bash
 python3 plex_diagnostic.py
 ```
+## Screenshots
+<img width="335" height="119" alt="Image" src="https://github.com/user-attachments/assets/327cb5fb-20d3-47f8-b6a5-6632acd97ab1" />
 
+<img width="918" height="850" alt="Image" src="https://github.com/user-attachments/assets/0c7f126d-657d-499e-b488-729a5358229d" />
+
+<img width="1214" height="370" alt="Image" src="https://github.com/user-attachments/assets/b84da573-7cb8-4fb3-b497-9751b5e30222" />
