@@ -4,8 +4,9 @@ Plexee Library Exporter
 =======================
 A command-line tool that connects to a Plex Media Server and exports
 library titles to CSV, plain-text, or HTML files.  One, several, or
-all libraries can be exported in a single run.  Movie libraries can
-optionally include IMDb ratings looked up via the OMDb API.
+all libraries can be exported in a single run.  Movie and TV show
+libraries can optionally include IMDb ratings looked up via the OMDb API.
+HTML exports link titles to IMDb when an IMDb id is available.
 
 Usage:
     python3 plex_library_exporter.py
@@ -657,6 +658,21 @@ def _is_movie_library(section) -> bool:
     return getattr(section, "type", "") == "movie"
 
 
+def _is_show_library(section) -> bool:
+    """Return True if *section* is a Plex TV show library."""
+    return getattr(section, "type", "") == "show"
+
+
+def _is_imdb_library(section) -> bool:
+    """Return True if *section* can be rated via OMDb (movies or TV shows)."""
+    return _is_movie_library(section) or _is_show_library(section)
+
+
+def _omdb_type_for_section(section) -> str:
+    """OMDb ``type`` query value for a movie or TV show library."""
+    return "series" if _is_show_library(section) else "movie"
+
+
 def _is_audiobook_library(section) -> bool:
     """Return True if *section* appears to be an audiobook library.
 
@@ -740,18 +756,24 @@ def fetch_omdb_rating(
     imdb_id: str | None = None,
     title: str | None = None,
     year=None,
+    media_type: str = "movie",
     opener=None,
 ) -> dict:
-    """Look up a movie on OMDb.  Returns a dict with ``imdb_rating`` / ``imdb_id``.
+    """Look up a movie or TV show on OMDb.
 
-    Prefers an IMDb id lookup; falls back to title (+ optional year).
-    *opener* is ``urllib.request.urlopen``-compatible (injectable in tests).
+    Returns a dict with ``imdb_rating`` / ``imdb_id``.  Prefers an IMDb id
+    lookup; falls back to title (+ optional year).  *media_type* is the OMDb
+    ``type`` parameter (``movie`` or ``series``) and is only sent on title
+    searches — an IMDb id already identifies the title.  *opener* is
+    ``urllib.request.urlopen``-compatible (injectable in tests).
     """
-    params: dict[str, str] = {"apikey": api_key, "type": "movie"}
+    params: dict[str, str] = {"apikey": api_key}
     if imdb_id:
         params["i"] = imdb_id
     elif title:
         params["t"] = title
+        omdb_type = media_type if media_type in ("movie", "series") else "movie"
+        params["type"] = omdb_type
         if year not in (None, ""):
             params["y"] = str(year)
     else:
@@ -798,10 +820,12 @@ def enrich_entries_with_omdb_ratings(
     opener=None,
     delay: float | None = None,
 ) -> dict:
-    """Fill ``imdb_rating`` on movie entries.  Returns lookup stats.
+    """Fill ``imdb_rating`` on movie and TV show entries.  Returns lookup stats.
 
     Uses *cache* (loaded from disk when omitted) so each title is fetched
-    at most once.  Non-movie entries (no ``imdb_id`` key) are left alone.
+    at most once.  Entries without an ``imdb_id`` key (audiobooks, photos)
+    are left alone.  Title fallbacks use ``omdb_type`` (``movie`` or
+    ``series``) when present on the entry.
     """
     targets = [e for e in entries if "imdb_id" in e]
     stats = {"cached": 0, "fetched": 0, "missing": 0, "skipped": 0}
@@ -815,7 +839,7 @@ def enrich_entries_with_omdb_ratings(
     cache_dirty = False
     invalid_key = False
 
-    print(f"  Looking up IMDb ratings for {len(targets)} movie(s) via OMDb…")
+    print(f"  Looking up IMDb ratings for {len(targets)} title(s) via OMDb…")
     for index, entry in enumerate(targets, start=1):
         imdb_id = (entry.get("imdb_id") or "").strip()
         title = entry.get("title") or ""
@@ -845,6 +869,7 @@ def enrich_entries_with_omdb_ratings(
                 imdb_id=imdb_id or None,
                 title=title,
                 year=year,
+                media_type=entry.get("omdb_type") or "movie",
                 opener=opener,
             )
         except OmdbInvalidKeyError as exc:
@@ -899,11 +924,11 @@ def choose_omdb_settings(
 ) -> str | None:
     """Return an OMDb API key when IMDb ratings should be fetched.
 
-    Only movie libraries use ratings.  Interactive runs prompt (Enter reuses
-    a saved key, ``skip`` disables).  Automated runs reuse the saved key or
-    skip silently when none is configured.
+    Movie and TV show libraries use ratings.  Interactive runs prompt
+    (Enter reuses a saved key, ``skip`` disables).  Automated runs reuse
+    the saved key or skip silently when none is configured.
     """
-    if not any(_is_movie_library(section) for section in sections):
+    if not any(_is_imdb_library(section) for section in sections):
         return None
 
     saved_key = str(config.get("omdb_api_key", "")).strip()
@@ -921,7 +946,7 @@ def choose_omdb_settings(
 
     abort_if_unattended("An OMDb API key is required to fetch IMDb ratings.")
 
-    print("\n--- IMDb Ratings (movie libraries) ---")
+    print("\n--- IMDb Ratings (movie and TV show libraries) ---")
     print("  Ratings come from OMDb (https://www.omdbapi.com/).")
     print("  Get a free key at that site.  Press Enter to skip.")
     if saved_key:
@@ -983,7 +1008,8 @@ def _fetch_audiobook_titles(section) -> list[dict]:
 def _fetch_standard_titles(section) -> list[dict]:
     """Retrieve titles from a standard (movie / TV show / photo) library.
 
-    Movie libraries also capture IMDb id and year so OMDb can look up ratings.
+    Movie and TV show libraries also capture IMDb id and year so OMDb can
+    look up ratings.  ``omdb_type`` is ``movie`` or ``series``.
 
     Returns a list of dicts: [{"title": ..., "added_at": ...}, ...]
     """
@@ -993,16 +1019,18 @@ def _fetch_standard_titles(section) -> list[dict]:
         print(f"Error fetching library items: {exc}")
         sys.exit(1)
 
-    is_movie = _is_movie_library(section)
+    is_imdb = _is_imdb_library(section)
+    omdb_type = _omdb_type_for_section(section) if is_imdb else None
     results = []
     for item in items:
         title = item.title
         added_at = getattr(item, "addedAt", None)
         entry = {"title": title, "added_at": added_at}
-        if is_movie:
+        if is_imdb:
             entry["imdb_id"] = extract_imdb_id(item) or ""
             year = getattr(item, "year", None)
             entry["year"] = year if year not in (None, 0, "0") else None
+            entry["omdb_type"] = omdb_type
         results.append(entry)
 
     return results
@@ -1201,6 +1229,17 @@ def _export_html(
             font-weight: bold;
         }}
         
+        a.imdb-link {{
+            color: #00ff00;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+        }}
+        
+        a.imdb-link:hover {{
+            color: #88ff00;
+            text-shadow: 0 0 8px #00ff00;
+        }}
+        
         footer {{
             text-align: center;
             padding: 20px;
@@ -1348,14 +1387,27 @@ def _export_html(
             .replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
+            .replace('"', "&quot;")
+        )
+
+    def _imdb_title_html(entry: dict) -> str:
+        """Title text, or a link to IMDb when a valid id is present."""
+        title = _esc(entry.get("title", ""))
+        imdb_id = (entry.get("imdb_id") or "").strip().lower()
+        if not re.fullmatch(r"tt\d{7,}", imdb_id):
+            return title
+        href = f"https://www.imdb.com/title/{imdb_id}/"
+        return (
+            f'<a class="imdb-link" href="{href}" '
+            f'target="_blank" rel="noopener noreferrer">{title}</a>'
         )
 
     # Generate table rows
     rows_html = []
     for entry in entries:
-        title = _esc(entry.get("title", ""))
+        title_html = _imdb_title_html(entry)
         date_added = _format_date(entry.get("added_at"))
-        cells = [f'                        <td class="title-cell">{title}</td>']
+        cells = [f'                        <td class="title-cell">{title_html}</td>']
         if include_library:
             library = _esc(entry.get("library", ""))
             cells.append(f'                        <td class="library-cell">{library}</td>')
@@ -1425,8 +1477,9 @@ def export_titles(
     (CSV / HTML) so titles can be distinguished.  Audiobook Author columns
     are included whenever any selected library is an audiobook library.
 
-    When *omdb_api_key* is set, movie libraries get an IMDb Rating column
-    (CSV / HTML) or a ``(7.5)`` suffix (text).
+    When *omdb_api_key* is set, movie and TV show libraries get an IMDb
+    Rating column (CSV / HTML) or a ``(7.5)`` suffix (text).  HTML titles
+    link to IMDb when an id is available.
     """
     entries: list[dict] = []
     for section in sections:
@@ -1481,7 +1534,7 @@ def export_titles(
         else:
             # Plain text – one title per line.
             # Multi-library: "Title [Library]"; audiobooks: "Title by Author".
-            # Movies with ratings: "Title (7.5)".
+            # Movies and TV shows with ratings: "Title (7.5)".
             with open(filename, "w", encoding="utf-8") as fh:
                 for entry in entries:
                     line = entry["title"]
@@ -1786,7 +1839,7 @@ def main(argv: list[str] | None = None) -> None:
     # Step 4 – Pick one, several, or all libraries.
     selected = select_libraries(sections, config, automated=automated)
 
-    # Step 4b – Optional OMDb API key for IMDb ratings on movie libraries.
+    # Step 4b – Optional OMDb API key for IMDb ratings on movie and TV libraries.
     omdb_api_key = choose_omdb_settings(config, selected, automated=automated)
     omdb_cache = load_omdb_cache() if omdb_api_key else None
 

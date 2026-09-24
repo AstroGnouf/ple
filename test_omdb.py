@@ -15,7 +15,9 @@ from plex_library_exporter import (  # noqa: E402
     OmdbInvalidKeyError,
     _export_html,
     _fetch_standard_titles,
+    _is_imdb_library,
     _is_movie_library,
+    _is_show_library,
     _title_cache_key,
     choose_omdb_settings,
     enrich_entries_with_omdb_ratings,
@@ -110,6 +112,14 @@ def test_is_movie_library():
     assert _is_movie_library(SimpleNamespace(type="artist")) is False
 
 
+def test_is_show_library():
+    assert _is_show_library(SimpleNamespace(type="show")) is True
+    assert _is_show_library(SimpleNamespace(type="movie")) is False
+    assert _is_imdb_library(SimpleNamespace(type="show")) is True
+    assert _is_imdb_library(SimpleNamespace(type="movie")) is True
+    assert _is_imdb_library(SimpleNamespace(type="artist")) is False
+
+
 def test_fetch_standard_titles_captures_imdb_for_movies():
     section = FakeSection(
         "Movies",
@@ -122,14 +132,17 @@ def test_fetch_standard_titles_captures_imdb_for_movies():
     assert entries[0]["year"] == 2010
 
 
-def test_fetch_standard_titles_tv_has_no_imdb_id():
+def test_fetch_standard_titles_tv_captures_imdb_id():
     section = FakeSection(
         "TV",
         "show",
-        [_movie("The Expanse", datetime(2019, 5, 1), imdb_id="tt3230854")],
+        [_movie("The Expanse", datetime(2019, 5, 1), imdb_id="tt3230854", year=2015)],
     )
     entries = _fetch_standard_titles(section)
-    assert "imdb_id" not in entries[0]
+    assert entries[0]["title"] == "The Expanse"
+    assert entries[0]["imdb_id"] == "tt3230854"
+    assert entries[0]["year"] == 2015
+    assert entries[0]["omdb_type"] == "series"
 
 
 def test_fetch_omdb_rating_by_id():
@@ -227,6 +240,16 @@ def test_choose_omdb_skips_non_movie():
     assert choose_omdb_settings({}, sections, automated=True) is None
 
 
+def test_choose_omdb_automated_uses_saved_key_for_shows():
+    sections = [SimpleNamespace(type="show", title="TV Shows")]
+    key = choose_omdb_settings(
+        {"omdb_api_key": "abc123", "omdb_enabled": True},
+        sections,
+        automated=True,
+    )
+    assert key == "abc123"
+
+
 def test_choose_omdb_automated_uses_saved_key():
     sections = [SimpleNamespace(type="movie", title="Movies")]
     key = choose_omdb_settings(
@@ -306,6 +329,89 @@ def test_html_includes_rating_column():
         assert "rating-cell" in html
         assert "8.5" in html
         assert "looksLikeNumber" in html
+
+
+def test_csv_tv_includes_imdb_rating_column():
+    shows = FakeSection(
+        "TV Shows",
+        "show",
+        [_movie("The Expanse", datetime(2019, 5, 1), imdb_id="tt3230854", year=2015)],
+    )
+    cache = {"tt3230854": {"imdb_rating": "8.5", "imdb_id": "tt3230854"}}
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "out.csv")
+        export_titles([shows], "csv", path, omdb_api_key="key", omdb_cache=cache)
+        with open(path, newline="", encoding="utf-8") as fh:
+            rows = list(csv.reader(fh))
+        assert rows[0] == ["Title", "IMDb Rating", "Date Added"]
+        assert rows[1] == ["The Expanse", "8.5", "2019-05-01"]
+
+
+def test_text_tv_appends_rating():
+    shows = FakeSection(
+        "TV Shows",
+        "show",
+        [_movie("The Expanse", imdb_id="tt3230854")],
+    )
+    cache = {"tt3230854": {"imdb_rating": "8.5", "imdb_id": "tt3230854"}}
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "out.txt")
+        export_titles([shows], "text", path, omdb_api_key="key", omdb_cache=cache)
+        lines = open(path, encoding="utf-8").read().splitlines()
+        assert lines == ["The Expanse (8.5)"]
+
+
+def test_html_tv_rating_and_imdb_link():
+    shows = FakeSection(
+        "TV Shows",
+        "show",
+        [_movie("The Expanse", datetime(2019, 5, 1), imdb_id="tt3230854")],
+    )
+    cache = {"tt3230854": {"imdb_rating": "8.5", "imdb_id": "tt3230854"}}
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "out.html")
+        export_titles([shows], "html", path, omdb_api_key="key", omdb_cache=cache)
+        html = open(path, encoding="utf-8").read()
+        assert "IMDb Rating" in html
+        assert "8.5" in html
+        assert 'href="https://www.imdb.com/title/tt3230854/"' in html
+        assert 'target="_blank"' in html
+        assert 'rel="noopener noreferrer"' in html
+        assert ">The Expanse</a>" in html
+
+
+def test_html_title_link_only_when_imdb_id_present():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "out.html")
+        _export_html(
+            [
+                {"title": "Alien", "imdb_id": "tt0078748", "imdb_rating": "8.5", "added_at": None},
+                {"title": "No Id", "imdb_id": "", "imdb_rating": "", "added_at": None},
+                {"title": "Bad & <Id>", "imdb_id": "not-an-id", "added_at": None},
+            ],
+            "Movies",
+            path,
+            include_rating=True,
+        )
+        html = open(path, encoding="utf-8").read()
+        assert 'href="https://www.imdb.com/title/tt0078748/"' in html
+        assert ">Alien</a>" in html
+        assert ">No Id</td>" in html
+        assert "Bad &amp; &lt;Id&gt;" in html
+        assert "imdb.com/title/not-an-id" not in html
+
+
+def test_enrich_series_title_fallback_uses_series_type():
+    calls = []
+    opener = make_opener(
+        {"The Expanse": {"Response": "True", "imdbRating": "8.5", "imdbID": "tt3230854", "Title": "The Expanse"}},
+        calls=calls,
+    )
+    entries = [{"title": "The Expanse", "imdb_id": "", "year": 2015, "omdb_type": "series"}]
+    enrich_entries_with_omdb_ratings(entries, "key", cache={}, opener=opener, delay=0)
+    assert entries[0]["imdb_rating"] == "8.5"
+    assert "type=series" in calls[0]
+    assert entries[0]["imdb_id"] == "tt3230854"
 
 
 def test_html_direct_rating_flag():

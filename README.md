@@ -22,7 +22,7 @@ I hope you find it as useful as I do :)
 - **Persistent Configuration**: Remembers your server settings, last-used libraries, and per-library filenames
 - **Connection Debugging**: Detailed connection status and error reporting
 - **HTML Theme**: Terminal-style green-on-black aesthetic with sortable tables
-- **IMDb ratings**: Optional OMDb lookups for movie libraries, cached locally
+- **IMDb ratings**: Optional OMDb lookups for movie and TV show libraries, cached locally
 
 ## Installation
 
@@ -83,9 +83,9 @@ When exporting multiple libraries, you'll be prompted for a **separate filename 
 
 ## Export Formats
 
-- **CSV**: Includes Title, Author (for audiobook libraries), IMDb Rating (movies, when enabled), and Date Added
-- **Text**: One title per line (audiobooks: "Title by Author"; movies with ratings: "Title (7.5)")
-- **HTML**: Sortable table with terminal theme, defaults to newest items first; IMDb Rating column for movies when enabled
+- **CSV**: Includes Title, Author (for audiobook libraries), IMDb Rating (movies and TV shows, when enabled), and Date Added
+- **Text**: One title per line (audiobooks: "Title by Author"; movies and TV shows with ratings: "Title (7.5)")
+- **HTML**: Sortable table with terminal theme, defaults to newest items first; IMDb Rating column for movies and TV shows when enabled. Titles with an IMDb id link to `https://www.imdb.com/title/{id}/`
 
 ### HTML Index Page
 
@@ -104,17 +104,19 @@ This makes it easy to:
 
 Simply open the generated `index.html` in your browser to access links to all your exported libraries.
 
-## IMDb Ratings (movie libraries)
+## IMDb Ratings (movie and TV show libraries)
 
-When you export a **movie** library, the exporter can look up IMDb ratings via [OMDb](https://www.omdbapi.com/).
+When you export a **movie** or **TV show** library, the exporter can look up IMDb ratings via [OMDb](https://www.omdbapi.com/).
 
 1. Get a free API key at https://www.omdbapi.com/apikey.aspx (1,000 requests/day on the free tier).
 2. When prompted, paste the key (or press Enter to skip). Type `skip` later to disable ratings.
 3. The key is stored in `config.json` as `omdb_api_key`. Automated runs reuse it without prompting.
 
-Lookups prefer the IMDb id already stored on the Plex item (`imdb://tt…`). If that is missing, the exporter falls back to a title + year search. Ratings are cached in `omdb_cache.json` next to the script so later runs only fetch new titles.
+Lookups prefer the IMDb id already stored on the Plex item (`imdb://tt…`). If that is missing, the exporter falls back to a title + year search (OMDb type `movie` or `series`). Ratings are cached in `omdb_cache.json` next to the script so later runs only fetch new titles.
 
-TV shows, photos, and audiobooks are not rated this way.
+In HTML exports, a title that has an IMDb id is a link to that title on IMDb. Titles without an id stay plain text.
+
+Photos and audiobooks are not rated this way.
 
 ## Diagnostic Tool
 
