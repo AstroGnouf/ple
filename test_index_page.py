@@ -14,7 +14,7 @@ import shutil
 # Add the current directory to the path to import the main module
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from plex_library_exporter import create_index_page, choose_index_location
+from ple import create_index_page, choose_index_location
 
 
 def test_index_page_creation():

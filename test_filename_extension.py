@@ -5,7 +5,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from plex_library_exporter import apply_extension  # noqa: E402
+from ple import apply_extension  # noqa: E402
 
 
 def test_adds_extension():

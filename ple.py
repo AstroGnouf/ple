@@ -9,8 +9,8 @@ libraries can optionally include IMDb ratings looked up via the OMDb API.
 HTML exports link titles to IMDb when an IMDb id is available.
 
 Usage:
-    python3 plex_library_exporter.py
-    python3 plex_library_exporter.py --setup
+    python3 ple.py
+    python3 ple.py --setup
 
 On first run the tool asks whether to use Interactive Manual or
 Automated mode, then prompts for server hostname/IP, port, and API

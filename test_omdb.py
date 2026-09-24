@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from plex_library_exporter import (  # noqa: E402
+from ple import (  # noqa: E402
     OmdbInvalidKeyError,
     _export_html,
     _fetch_standard_titles,

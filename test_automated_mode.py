@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from plex_library_exporter import (  # noqa: E402
+from ple import (  # noqa: E402
     MODE_AUTOMATED,
     MODE_INTERACTIVE,
     _remembered_libraries,
@@ -44,7 +44,7 @@ def test_ensure_mode_uses_saved():
 
 
 def test_ensure_mode_unattended_without_config_exits():
-    with patch("plex_library_exporter.stdin_is_interactive", return_value=False):
+    with patch("ple.stdin_is_interactive", return_value=False):
         try:
             ensure_mode({})
         except SystemExit as exc:
@@ -82,7 +82,7 @@ def test_choose_export_format_automated_uses_saved():
 
 
 def test_choose_export_format_automated_defaults_html():
-    with patch("plex_library_exporter.save_config"):
+    with patch("ple.save_config"):
         fmt = choose_export_format({}, automated=True)
     assert fmt == "html"
 
@@ -105,7 +105,7 @@ def test_select_libraries_automated_reuses_saved():
         SimpleNamespace(title="Music", type="artist"),
     ]
     config = {"last_libraries": ["TV Shows", "Music"]}
-    with patch("plex_library_exporter.save_config"):
+    with patch("ple.save_config"):
         selected = select_libraries(sections, config, automated=True)
     assert [s.title for s in selected] == ["TV Shows", "Music"]
 
@@ -116,14 +116,14 @@ def test_select_libraries_automated_exports_all_when_none_saved():
         SimpleNamespace(title="TV Shows", type="show"),
     ]
     config = {}
-    with patch("plex_library_exporter.save_config"):
+    with patch("ple.save_config"):
         selected = select_libraries(sections, config, automated=True)
     assert [s.title for s in selected] == ["Movies", "TV Shows"]
 
 
 def test_select_libraries_interactive_without_tty_exits():
     sections = [SimpleNamespace(title="Movies", type="movie")]
-    with patch("plex_library_exporter.stdin_is_interactive", return_value=False):
+    with patch("ple.stdin_is_interactive", return_value=False):
         try:
             select_libraries(sections, {}, automated=False)
         except SystemExit as exc:
@@ -135,7 +135,7 @@ def test_select_libraries_interactive_without_tty_exits():
 if __name__ == "__main__":
     tests = [v for k, v in globals().items() if k.startswith("test_")]
     failed = 0
-    with patch("plex_library_exporter.save_config"):
+    with patch("ple.save_config"):
         for fn in tests:
             try:
                 fn()

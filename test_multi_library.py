@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 # Import without requiring a live Plex connection.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from plex_library_exporter import (  # noqa: E402
+from ple import (  # noqa: E402
     _display_name,
     _export_html,
     _format_date,

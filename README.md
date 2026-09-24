@@ -33,7 +33,7 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-python3 plex_library_exporter.py
+python3 ple.py
 ```
 
 On first run, you'll be prompted for:
@@ -47,7 +47,7 @@ On first run, you'll be prompted for:
 Re-run setup (mode and export settings) at any time:
 
 ```bash
-python3 plex_library_exporter.py --setup
+python3 ple.py --setup
 ```
 
 ## Run Modes
@@ -63,7 +63,7 @@ After the first interactive setup, later runs use saved settings and **never pro
 Example crontab (daily at 2:00 AM):
 
 ```cron
-0 2 * * * /usr/bin/python3 /path/to/plex_library_exporter.py >> /path/to/plexee.log 2>&1
+0 2 * * * /usr/bin/python3 /path/to/ple.py >> /path/to/plexee.log 2>&1
 ```
 
 Use the same working directory you used during setup (or absolute paths in `library_filenames`) so exports land where you expect.
